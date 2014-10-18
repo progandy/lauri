@@ -1,5 +1,13 @@
 #!/usr/bin/env luajit
 local VERSION = "v0.1"
+local AURRPC = "https://aur.archlinux.org/rpc.php?v=3&type="
+
+local AURFIELDS = {'ID', 'Name', 'PackageBaseID', 'PackageBase', 'Version', 
+                   'CategoryID', 'Description', 'URL', 'URLPath', 'NumVotes', 
+                   'OutOfDate', 'Maintainer', 'FirstSubmitted', 'LastModified',
+                   'Depends', 'MakeDepends', 'CheckDepends', 'OptDepends',
+                   'Conflicts', 'Provides', 'Replaces', 'Groups', 'License'}
+
 package.path = "./lib/?.lua;?.lua;" .. package.path
 local ffi=require("ffi")
 local alpm=require("alpm")
@@ -37,7 +45,21 @@ function table.add(f, l)
   return f
 end
 
-pkgdata={}
+local aur = {}
+function aur.geturl(curleasy, method, args)
+  local m={multiinfo=2, info=1, search=1, msearch=1, suggest=1, ['suggest-pkgbase']=1}
+  if m[method] and m[method] == 2  then
+    local esc,i,v={}
+    for i,v in ipairs(args) do
+      esc[i]=curleasy:escape(v)
+    end
+    return AURRPC..method..'&arg[]='..table.concat(esc, '&arg[]=')
+  elseif m[method] then
+    return AURRPC..method..'&arg='..curleasy:escape(args)
+  end
+  return nil
+end
+
 local BaseTree = {}
 BaseTree.__index = BaseTree
 function BaseTree.new(t)
@@ -53,26 +75,96 @@ function BaseTree:add(pkg)
     if self[pkg.PackageBase] == nil then self[pkg.PackageBase] = {} end
     table.add(self[pkg.PackageBase], pkg.Name)
 end
-x = BaseTree()
-x:add({PackageBase="himo", Name="himo-gtk"})
-x:add({PackageBase="himo", Name="himo-cli"})
-print(x["himo"][1])
 
+
+curl.init(curl.CURL_GLOBAL_ALL)
+errno=ffi.new("alpm_errno_t[1]")
+pacman=alpm.Alpm.initialize('/', '/var/lib/pacman', errno)
 dbs = {}
 for l in io.lines("/etc/pacman.conf") do
     local s = l:match("^%s*%[%s*([^%]%s]*)%s*]%s*$")
     if s and s ~= 'options' then
-        dbs[#dbs+1] = s
+        dbs[#dbs+1] = alpm.alpm_register_syncdb(pacman, s, 0)
     end
 end
-errno=ffi.new("alpm_errno_t[1]")
---pacman=ffi.gc(alpm.alpm_initialize('/', '/var/lib/pacman', errno), alpm.alpm_release)
-pacman=alpm.Alpm.initialize('/', '/var/lib/pacman', errno)
-for i,db in ipairs(dbs) do
-    dbs[i] = alpm.alpm_register_syncdb(pacman, db,
-                                        alpm.ALPM_SIG_DATABASE_OPTIONAL)
+
+function wrap(str, limit, indent, indent1)
+  indent = indent or ""
+  indent1 = indent1 or indent
+  limit = limit or 72
+  local here = 1-#indent1
+  return indent1..str:gsub("(%s+)()(%S+)()",
+                          function(sp, st, word, fi)
+                            if fi-here > limit then
+                              here = st - #indent
+                              return "\n"..indent..word
+                            end
+                          end)
+end
+function infotext(label, text, xtra)
+  local ind = "                 "
+  label = label and ("%-14s : "):format(label) or ind
+  return wrap(tostring(text), 78, ind..(xtra or ""), label)
+end
+function infotable(label, text)
+  if label == "OptDepends" then 
+    local r,i={infotext(label, text[1]  or "", "  ")}
+    for i=2,#text do
+      r[i] = infotext(nil, text[i], "  ")
+    end
+    return table.concat(r, "\n")
+  end
+  return infotext(label, table.concat(text, ', '))
 end
 
+function aur.getinfo(pkgs)
+  local c = curl.Easy.init()
+  local io = require"io"
+
+  if type(pkgs) == 'table' then
+    c:setopt("CURLOPT_URL", aur.geturl(c, "multiinfo", pkgs))
+  else
+    c:setopt("CURLOPT_URL", aur.geturl(c, "info", pkgs))
+  end
+  local data = curl.WriteBuffer()
+  c:setopt("CURLOPT_FOLLOWLOCATION", 1)
+  c:setopt("CURLOPT_WRITEDATA", curl.Null)
+  c:setopt("CURLOPT_WRITEFUNCTION", data.callback())
+  local res = c:perform()
+  if res ~= curl.CURLE_OK then return false, c:strerror(res) end
+  local pkginfos = json:decode(data.get())
+  data:clear()
+  if pkginfos.type == 'error' then return false, pkginfos.results end
+  return pkginfos.results, pkginfos.resultcount
+end
+function aur.info(pkgs)
+  local pkginfos,msg = aur.getinfo(pkgs)
+  if not pkginfos then return false, msg end
+  local aurpkgs,missing,v,_,pkg={},{}
+  for _,v in ipairs(pkginfos) do
+    aurpkgs[v.Name] = true
+  end
+  local f=string.format
+  for _,v in ipairs(pkgs) do
+    if not aurpkgs[v] then missing[#missing+1] = v end
+  end
+  
+  for v=1,#missing do
+    io.stderr:write(f("%s not in AUR\n",missing[v]))
+  end
+
+  for _,pkg in ipairs(pkginfos) do
+    for _,v in ipairs(AURFIELDS) do
+      if type(pkg[v]) == 'table' then
+        print(infotable(v, pkg[v]))
+      elseif pkg[v] then
+        print(infotext(v, pkg[v]))
+      end
+    end
+    print()
+  end
+
+end
 
 function get_foreign_pkgs(a) 
     local dbs = a:get_syncdbs()
@@ -102,49 +194,37 @@ function getname(a)
     if not a then return "" end
     return ffi.string(a)
 end
---[[
-for i,db in ipairs(dbs) do
-    list = alpm.alpm_db_get_pkgcache(db)
-    print("###", ffi.string(db:get_name()))
-    for k,v in list:iter(getname) do
-        print(k, v)
-    end
-    list=nil
-end
-]]
-    function Set (list)
-      local set = {}
-      for _, l in ipairs(list) do set[l] = true end
-      return set
-    end
-print(alpm.capabilities())
-pkgs={}
+local pkgs={}
 for k,v in ipairs(get_foreign_pkgs(pacman)) do
     pkgs[k] = alpm.String(v:get_name())
 end
 
-p=table.concat(pkgs, "&arg[]=")
-curl.init(curl.CURL_GLOBAL_ALL)
-c = curl.Easy.init()
-data = curl.WriteBuffer()
-c:setopt("CURLOPT_URL", 
-    "http://aur.archlinux.org/rpc.php?type=multiinfo&v=3&arg[]="..p)
---c:setopt("CURLOPT_URL", "http://aur.archlinux.org/rpc.php?type=multiinfo&v=3&arg[]=libindicator-gtk2&arg[]=cower")
---c:setopt("CURLOPT_URL","http://example.com")
-c:setopt("CURLOPT_FOLLOWLOCATION", 1)
-c:setopt("CURLOPT_WRITEDATA", curl.Null)
-c:setopt("CURLOPT_WRITEFUNCTION", data.callback())
-print(c:strerror(c:perform()))
 
-aurpkgs = json:decode(data.get())
-data.clear()
-aurnames={}
-for k,v in ipairs(aurpkgs.results) do
-    aurnames[k] = v.Name
+function aur.getupdates()
+  local pkgs={}
+  for k,v in ipairs(get_foreign_pkgs(pacman)) do
+      pkgs[k] = alpm.String(v:get_name())
+  end
+  local pkginfos = aur.getinfo(pkgs)
+  local localdb = pacman:get_localdb()
+  local updates,oldver={},{}
+  for _,v in ipairs(pkginfos) do
+    local p = localdb:get_pkg(v.Name)
+    if (p.vercmp(v.Version, p:get_version()) > 0) then
+      updates[#updates+1] = v
+      oldver[#oldver+1] = ffi.string(p:get_version())
+    end
+  end
+  return updates, oldver
 end
-found = Set(aurnames)
-for _,v in pairs(pkgs) do
-    if not found[v] then print("#Missing", v) end
+
+function aur.download(pkg)
+  
+end
+
+u,o=aur.getupdates()
+for i=1,#u do
+  print(("%s %s -> %s"):format(u[i].Name, o[i], u[i].Version))
 end
 
 local help='lurm '..VERSION..[=[ 
