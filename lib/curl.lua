@@ -1389,9 +1389,15 @@ function M.WriteBuffer()
   local __gc = ffi.gc(ffi.new("void*"),
     function() cb:free(); cb=nil end)
   return {
-    callback = function() return cb end,
-    get = function() return table.concat(buffer) end,
-    clear = function() buffer = {} end
+    getwritecb = function(self) return cb end,
+    write = function(self,text)
+        local len=#text
+        if len < 1 then return 0 end
+        buffer[#buffer+1] = text
+        return len
+      end,
+    read = function(self) return table.concat(buffer) end,
+    clear = function(self) buffer = {} end
   }
 end
 
@@ -1404,20 +1410,20 @@ c = M.Easy.init()
 
 buf = M.WriteBuffer()
 hb = M.WriteBuffer()
-c:setopt("CURLOPT_HEADERFUNCTION", hb.callback())
+c:setopt("CURLOPT_HEADERFUNCTION", hb:getwritecb())
 c:setopt("CURLOPT_HEADERDATA", M.Null)
-c:setopt("CURLOPT_WRITEFUNCTION", buf.callback())
+c:setopt("CURLOPT_WRITEFUNCTION", buf:getwritecb())
 c:setopt("CURLOPT_WRITEDATA", M.Null)
 --c:setopt("CURLOPT_URL", "http://example.com")
 c:setopt("CURLOPT_URL", "https://aur.archlinux.org/rpc.php?type=info&v=3&arg=libindicator-gtk2")
 status = c:perform()
 if status ~= M.CURLE_OK then print("!!Error:", c:strerror(status)) end
 print("## HEADER ##")
-print(hb.get())
+print(hb:read())
 print("## BODY ##")
-print(buf.get())
-buf.clear()
-hb.clear()
+print(buf:read())
+buf:clear()
+hb:clear()
 buf=nil
 
 print(c:getinfo("CURLINFO_EFFECTIVE_URL"))

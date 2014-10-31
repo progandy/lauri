@@ -1,20 +1,50 @@
-#!/usr/bin/env luajit
+#!/usr/bin/env luajit 
+
 local VERSION = "v0.1"
+local LIBPATH = '%lib/?.lua'
 local AURRPC = "https://aur.archlinux.org/rpc.php?v=3&type="
-
+local AURCATEGORIES = {[1]=false, [2]="daemons", [3]="devel", [4]="editors",
+        [5]="emulators", [6]="games", [7]="gnome", [8]="i18n", [9]="kde", 
+        [10]="lib", [11]="modules", [12]="multimedia", [13]="network", 
+        [14]="office", [15]="science", [16]="system", [17]="x11", [18]="xfce",
+        [19]="kernels", [20]="fonts"}
+do
+  local k,v
+  for k,v in ipairs(AURCATEGORIES) do
+    if v then AURCATEGORIES[v] = k end
+  end
+end
 local AURFIELDS = {'ID', 'Name', 'PackageBaseID', 'PackageBase', 'Version', 
-                   'CategoryID', 'Description', 'URL', 'URLPath', 'NumVotes', 
-                   'OutOfDate', 'Maintainer', 'FirstSubmitted', 'LastModified',
-                   'Depends', 'MakeDepends', 'CheckDepends', 'OptDepends',
-                   'Conflicts', 'Provides', 'Replaces', 'Groups', 'License'}
+      'CategoryID', 'Category', 'Description', 'URL', 'URLPath', 'NumVotes',
+      'OutOfDate', 'Maintainer', 'FirstSubmitted', 'LastModified', 'Depends',
+      'MakeDepends', 'CheckDepends', 'OptDepends', 'Conflicts', 'Provides', 
+      'Replaces', 'Groups', 'License'}
 
-package.path = "./lib/?.lua;?.lua;" .. package.path
 local ffi=require("ffi")
+ffi.cdef[[
+char *getcwd(char *, size_t);
+void freecwd(char*) __asm__("free");
+int isatty(int);
+]]
+
+local getexepath = function()
+  local mainpath = arg[0]:match('^(.-)[^/]*$') or ''
+  if mainpath:sub(1,1) == '/' then return mainpath end
+  local charp = ffi.C.getcwd(nil, 0)
+  local path = ffi.string(charp)
+  ffi.C.freecwd(charp)
+  return path ..'/'.. mainpath
+end
+package.path = LIBPATH:gsub('%%', getexepath()) .. ";?.lua;"   .. package.path
+
 local alpm=require("alpm")
 local archive=require("archive")
 local json=require("JSON")
 local curl=require("curl")
-
+local opt=require("getopt")
+local io=require("io")
+local os=require("os")
+local ansiseq=require("ansiseq")
 
 local enum = {}
 function enum.bor(a, b)
@@ -45,13 +75,22 @@ function table.add(f, l)
   return f
 end
 
-local aur = {}
-function aur.geturl(curleasy, method, args)
+local AURPC = {}
+AURPC.__index=AURPC
+function AURPC.new(pacman,t)
+  t = t or {}
+  t.pacman = pacman
+  setmetatable(t, AURPC)
+  return t
+end
+function AURPC:geturl(curleasy, method, args, start, stop)
   local m={multiinfo=2, info=1, search=1, msearch=1, suggest=1, ['suggest-pkgbase']=1}
   if m[method] and m[method] == 2  then
-    local esc,i,v={}
-    for i,v in ipairs(args) do
-      esc[i]=curleasy:escape(v)
+    local esc,i={}
+    if not start or start < 1 then start = 1 end
+    if not stop or stop > #args then stop = #args end
+    for i=start,stop do
+      esc[#esc+1]=curleasy:escape(args[i])
     end
     return AURRPC..method..'&arg[]='..table.concat(esc, '&arg[]=')
   elseif m[method] then
@@ -59,6 +98,60 @@ function aur.geturl(curleasy, method, args)
   end
   return nil
 end
+function AURPC:request(rtype, args)
+  local c = curl.Easy.init()
+
+  local data = curl.WriteBuffer()
+  c:setopt("CURLOPT_FOLLOWLOCATION", 1)
+  c:setopt("CURLOPT_WRITEDATA", curl.Null)
+  c:setopt("CURLOPT_WRITEFUNCTION", data:getwritecb())
+  c:setopt("CURLOPT_URL", self:geturl(c, rtype, args))
+  local res = c:perform()
+  if res ~= curl.CURLE_OK then return false, c:strerror(res) end
+  local pkginfos = json:decode(data:read())
+  data:clear()
+  if pkginfos.type == 'error' then return false, pkginfos.results end
+  return pkginfos.results, pkginfos.resultcount, pkginfos.type
+end
+function AURPC:getinfo(pkgs)
+  local info = (type(pkgs) == 'table') and "multiinfo" or "info"
+  return self:request(info, pkgs)
+end
+
+function AURPC:getbaseinfo(pkgbase)
+  local translate = { ["Last Updated"]="LastModified", Votes="NumVotes" }
+  local url = ("https://aur.archlinux.org/pkgbase/%s/?setlang=en"):format(pkgbase)
+  local data = curl.WriteBuffer()
+  local c = curl.Easy.init()
+  c:setopt("CURLOPT_WRITEDATA", nil)
+  c:setopt("CURLOPT_WRITEFUNCTION", data:getwritecb())
+  c:setopt("CURLOPT_FOLLOWLOCATION", 0)
+  c:setopt("CURLOPT_URL", url)
+  if curl.CURLE_OK ~= c:perform() then return nil end
+  local info = data:read():match('<div id="pkgdetails" .-\n</div>')
+  local pkginfo,k,v={PackageBase=pkgbase}
+  pkginfo.URL=url:gsub("%?setlang=en$", "")
+  pkginfo.URLPath=info:match('<a href="([^"]+)"%s*>%s*Download%s')
+  pkginfo.CategoryID=info:match('<td>%s*<a href="/packages/%?C=(%d+)">')
+  pkginfo.OutOfDate=info:match('<li><span class="flagged">%s*([^<][^<]-)%s*</span></li>')
+  for k,v in 
+    info:gmatch("<tr>%s*<th>%s*([^<:]*):?%s*</th>%s*<td>%s*%b<>%s*([^<]*[^<%s])%s*%b<>%s*</td>%s*</tr>")
+  do
+    pkginfo[translate[k] or k:gsub('%s+','')] = v
+  end
+  for k,v in 
+    info:gmatch("<tr>%s*<th>%s*([^<:]*):?%s*</th>%s*<td>%s*([^<]*[^<%s])%s*</td>%s*</tr>")
+  do
+    pkginfo[translate[k] or k:gsub('%s+','')] = v
+  end
+  pkginfo.Packages = {}
+  local pkgs = info:match('<div id="pkgs" class="listing">.-</div>')
+  for pkg in pkgs:gmatch('"/packages/([^/]+)/"') do
+    pkginfo.Packages[#pkginfo.Packages+1] = pkg
+  end
+  return pkginfo
+end
+
 
 local BaseTree = {}
 BaseTree.__index = BaseTree
@@ -76,95 +169,6 @@ function BaseTree:add(pkg)
     table.add(self[pkg.PackageBase], pkg.Name)
 end
 
-
-curl.init(curl.CURL_GLOBAL_ALL)
-errno=ffi.new("alpm_errno_t[1]")
-pacman=alpm.Alpm.initialize('/', '/var/lib/pacman', errno)
-dbs = {}
-for l in io.lines("/etc/pacman.conf") do
-    local s = l:match("^%s*%[%s*([^%]%s]*)%s*]%s*$")
-    if s and s ~= 'options' then
-        dbs[#dbs+1] = alpm.alpm_register_syncdb(pacman, s, 0)
-    end
-end
-
-function wrap(str, limit, indent, indent1)
-  indent = indent or ""
-  indent1 = indent1 or indent
-  limit = limit or 72
-  local here = 1-#indent1
-  return indent1..str:gsub("(%s+)()(%S+)()",
-                          function(sp, st, word, fi)
-                            if fi-here > limit then
-                              here = st - #indent
-                              return "\n"..indent..word
-                            end
-                          end)
-end
-function infotext(label, text, xtra)
-  local ind = "                 "
-  label = label and ("%-14s : "):format(label) or ind
-  return wrap(tostring(text), 78, ind..(xtra or ""), label)
-end
-function infotable(label, text)
-  if label == "OptDepends" then 
-    local r,i={infotext(label, text[1]  or "", "  ")}
-    for i=2,#text do
-      r[i] = infotext(nil, text[i], "  ")
-    end
-    return table.concat(r, "\n")
-  end
-  return infotext(label, table.concat(text, ', '))
-end
-
-function aur.getinfo(pkgs)
-  local c = curl.Easy.init()
-  local io = require"io"
-
-  if type(pkgs) == 'table' then
-    c:setopt("CURLOPT_URL", aur.geturl(c, "multiinfo", pkgs))
-  else
-    c:setopt("CURLOPT_URL", aur.geturl(c, "info", pkgs))
-  end
-  local data = curl.WriteBuffer()
-  c:setopt("CURLOPT_FOLLOWLOCATION", 1)
-  c:setopt("CURLOPT_WRITEDATA", curl.Null)
-  c:setopt("CURLOPT_WRITEFUNCTION", data.callback())
-  local res = c:perform()
-  if res ~= curl.CURLE_OK then return false, c:strerror(res) end
-  local pkginfos = json:decode(data.get())
-  data:clear()
-  if pkginfos.type == 'error' then return false, pkginfos.results end
-  return pkginfos.results, pkginfos.resultcount
-end
-function aur.info(pkgs)
-  local pkginfos,msg = aur.getinfo(pkgs)
-  if not pkginfos then return false, msg end
-  local aurpkgs,missing,v,_,pkg={},{}
-  for _,v in ipairs(pkginfos) do
-    aurpkgs[v.Name] = true
-  end
-  local f=string.format
-  for _,v in ipairs(pkgs) do
-    if not aurpkgs[v] then missing[#missing+1] = v end
-  end
-  
-  for v=1,#missing do
-    io.stderr:write(f("%s not in AUR\n",missing[v]))
-  end
-
-  for _,pkg in ipairs(pkginfos) do
-    for _,v in ipairs(AURFIELDS) do
-      if type(pkg[v]) == 'table' then
-        print(infotable(v, pkg[v]))
-      elseif pkg[v] then
-        print(infotext(v, pkg[v]))
-      end
-    end
-    print()
-  end
-
-end
 
 function get_foreign_pkgs(a) 
     local dbs = a:get_syncdbs()
@@ -187,6 +191,230 @@ function get_foreign_pkgs(a)
     return fpkgs
 end
 
+function AURPC:getupdates()
+  assert(self.pacman)
+  local pkgs={}
+  for k,v in ipairs(get_foreign_pkgs(self.pacman)) do
+      pkgs[k] = alpm.String(v:get_name())
+  end
+  local pkginfos = self:getinfo(pkgs)
+  local localdb = self.pacman:get_localdb()
+  local updates={}
+  for _,v in ipairs(pkginfos) do
+    local p = localdb:get_pkg(v.Name)
+    if (p.vercmp(v.Version, p:get_version()) > 0) then
+      v.OldVersion = ffi.string(p:get_version())
+      updates[#updates+1] = v
+    end
+  end
+  return updates
+end
+
+function AURPC:download(pkg)
+  
+end
+
+local options,nonopts = opt.getopt("c:himsu", arg)
+if not options then
+  io.stderr:write(nonoptidx)
+  os.exit(1)
+elseif options.h then
+local help='lauri '..VERSION..[=[ 
+(C) 2014 Andreas Bosch <code@progandy.de>
+Usage: lauri [ -c auto|always|never ] [ -himsu ] [ -t [ SEARCHTYPE ] ] SEARCH_OR_PACKAGE... 
+  -h        This help
+
+  -c COLOR  colorize output auto/always/never (default: auto, show color in tty)
+  -b        display base package info
+  -i        display package info
+  -m        search for maintainer
+  -s        search package
+  -u        search for updates
+]=]
+print(help)
+os.exit(0)
+end
+if options.c == nil or options.c == 'auto' then
+  options.c = ffi.C.isatty(1) ~= 0
+elseif options.c == 'always' or options.c == 'true' or options.c == 'yes' then
+  options.c = true
+else
+  options.c = false
+end
+string.fmt = options.c and string.formatc or function(self,...) return self:stripcsi():format(...) end
+
+curl.init(curl.CURL_GLOBAL_ALL)
+errno=ffi.new("alpm_errno_t[1]")
+pacman=alpm.Alpm.initialize('/', '/var/lib/pacman', errno)
+dbs = {}
+for l in io.lines("/etc/pacman.conf") do
+    local s = l:match("^%s*%[%s*([^%]%s]*)%s*]%s*$")
+    if s and s ~= 'options' then
+        dbs[#dbs+1] = alpm.alpm_register_syncdb(pacman, s, 0)
+    end
+end
+
+aur = AURPC.new(pacman)
+
+do
+  local i=0
+  for _,v in ipairs({'b','i','m','s','u'}) do
+    if options[v] then i = i+1 end
+  end
+  if i == 0 then
+    io.stderr:write("No action specified.\n")
+    os.exit(2)
+  elseif i > 1 then 
+    io.stderr:write("Info, search and update are mutually exclusive.\n")
+    os.exit(2)
+  end
+end
+
+function simplewrap(text,length,indent,firstlength)
+  local lines,i,len,w={},1,firstlength or length
+  for n,w in text:gmatch("(\n?)%s*(%S+)") do
+    if lines[i] == nil then
+      lines[i] = w
+    elseif (n == '\n') or (#lines[i] + 1 + #w > len) then 
+      i = i+1
+      len = length
+      lines[i] = w
+    else
+      lines[i] = lines[i] .. ' ' .. w
+    end
+  end
+  return table.concat(lines, '\n'..indent)
+end
+
+function printpkg(pkg,fields)
+  local line="&[bright]%-15s :&[reset] %s"
+  local indent, width=string.rep(' ', 18), 79-18
+  local indentex, widthex = string.rep(' ', 19), 79-20
+  for _,k in ipairs(fields or AURFIELDS) do
+    local v = pkg[k]
+    if type(v) == 'table' then
+      if k == 'OptDepends' then
+        print(line:fmt(k, simplewrap(v[1], widthex, indent, width)))
+        for i=2,#v do
+          print((' '):rep(17) .. simplewrap(v[i], widthex, indentex, width))
+        end
+      else
+        print(line:fmt(k, simplewrap(table.concat(v,', '), width, indent)))
+      end
+    elseif v then
+      print(line:fmt(k, simplewrap(tostring(v), width, indent)))
+    end
+  end
+  
+end
+
+function AURPC:printbase(base)
+  aur:printpkg(base, { 'Packages', 'Submitter', 'LastPackager' })
+end
+
+--[[
+print("=====")
+
+function AURPC:printbase(base)
+  aur:printpkg(base, { 'Packages', 'Submitter', 'LastPackager' })
+end
+
+aur:printbase(aur:getbaseinfo("cower"))
+print("")
+]]
+function doinfo(aur, targets)
+  if not targets or #targets == 0 then
+    io.stderr:write("Missing package names.\n")
+    os.exit(3)
+  end
+  local p,m = aur:getinfo(targets)
+  if not p then
+    io.stderr:write("Package(s) not found in AUR.\n")
+    os.exit(3)
+  end
+  local a,err={},{}
+  for _,n in ipairs(p) do a[n.Name] = n end
+  for _,n in ipairs(targets) do
+    if a[n] then
+      printpkg(a[n])
+      print()
+    else
+      err[#err+1] = "Package '" .. n .. "' not found in AUR.\n"
+    end
+  end
+  if #err > 0 then io.stderr:write(table.concat(err)) end
+end
+function matchall(s, patterns)
+  if type(s) ~= 'table' then s = {tostring(s)} end
+  for _,p in ipairs(patterns) do
+    local m=false
+    for _,h in ipairs(s) do
+      if h:match(p) then m=true ; break end
+    end
+    if not m then return false end
+  end
+  return true
+end
+function dosearch(aur, terms)
+  local p=""
+  if #nonopts == 0 then
+    io.stderr:write("Missing search terms.\n")
+    os.exit(3)
+  end
+  -- find the longest search term for initial search
+  for i=1,#nonopts do
+    if not nonopts[i]:match('[%(%)%.%%%+%-%*%?%[%^%$]') and #nonopts[i] > #p then p=nonopts[i] end
+  end
+  if #p == 0 then
+    for i=1,#nonopts do
+      p = pattern_extract_literal(nonopts[i])
+      if #p > 0 then break end
+    end
+  end
+  if #p == 0 then
+    io.stderr:write("Missing a pattern-free search term.\n")
+    os.exit(3)
+  end
+  local pkginfos = aur:request('search', p)
+  local restmpl = "&[bright]%s &[green]%s&[reset] (%d)"
+  table.sort(pkginfos, function(a,b) return a.Name < b.Name end)
+  for _,pkg in ipairs(pkginfos) do
+  -- filter more here. only description or only pkgname
+    if matchall({pkg.Name , pkg.Description}, nonopts) then
+      print(restmpl:fmt(pkg.Name, pkg.Version, pkg.NumVotes))
+      print('',pkg.Description)
+    end
+  end
+end
+function doupdate(aur)
+  local u u=aur:getupdates()
+  if not u or #u == 0 then
+    io.stderr:write("No updates available in the AUR.\n")
+    os.exit(1)
+  end
+  local restmpl = "&[bright]%s &[green]%s&[reset] &[dim white](%s)&[reset]"
+  for i=1,#u do
+    print(restmpl:fmt(u[i].Name, u[i].Version, u[i].OldVersion))
+  end
+end
+
+if options.b then
+  dobaseinfo(aur, nonopts)
+elseif options.i then
+  doinfo(aur, nonopts)
+elseif options.m then
+  domsearch(aur, nonopts)
+elseif options.s then
+  dosearch(aur, nonopts)
+elseif options.u then
+  doupdate(aur)
+else
+  io.stderr:write("Missing action\n")
+end
+
+os.exit()
+
+
 --for k,v in ipairs(list:to_table()) do
 function getname(a)
     if not a then return "" end
@@ -200,50 +428,7 @@ for k,v in ipairs(get_foreign_pkgs(pacman)) do
 end
 
 
-function aur.getupdates()
-  local pkgs={}
-  for k,v in ipairs(get_foreign_pkgs(pacman)) do
-      pkgs[k] = alpm.String(v:get_name())
-  end
-  local pkginfos = aur.getinfo(pkgs)
-  local localdb = pacman:get_localdb()
-  local updates,oldver={},{}
-  for _,v in ipairs(pkginfos) do
-    local p = localdb:get_pkg(v.Name)
-    if (p.vercmp(v.Version, p:get_version()) > 0) then
-      updates[#updates+1] = v
-      oldver[#oldver+1] = ffi.string(p:get_version())
-    end
-  end
-  return updates, oldver
-end
 
-function aur.download(pkg)
-  
-end
-
-u,o=aur.getupdates()
-for i=1,#u do
-  print(("%s %s -> %s"):format(u[i].Name, o[i], u[i].Version))
-end
-
-local help='lurm '..VERSION..[=[ 
-(C) 2014 Andreas Bosch <code@progandy.de>
-Usage: lurm [ -smdfi ] [ -t [ SEARCHTYPE ] ] SEARCH_OR_PACKAGE... 
-
-]=]
-print(help)
-
-local res, opts, nonoptind = pcall(optparse, {
-  s = {},
-  d = {},
-  f = {}
-    }, arg)
-
-for k,v in pairs{a=1,c=4,d=2} do
-
-print(k,v)
-end
 
 s = alpm.find_satisfier(pacman:get_localdb():get_pkgcache(), "libgl")
 print(ffi.string(s:get_name()))

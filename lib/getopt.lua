@@ -25,8 +25,8 @@ local function getopt(optstring,args,longopts,skipunknown)
       if s[o] then return o,s[o] end
       return o,l[o]
     end
-  local result,lastopt,opttype,unparsed={},nil,nil,nil
-  local consumeopt=nil
+  local result, lastopt, opttype = {}, nil, nil
+  local nonopts, nonoptidx, consumeopt = {}, #args+1, nil
   for k,v in ipairs(args) do
       if consumeopt then
         result[consumeopt][#result[consumeopt]+1] = v
@@ -41,7 +41,7 @@ local function getopt(optstring,args,longopts,skipunknown)
         opttype = nil
       elseif v == "--" then -- abort parsing
         lastopt,opttype = nil,nil
-        unparsed = k+1
+        nonoptidx = k+1
         break
       elseif v:sub(1,2) == '--' then -- longopts
         lastopt,opttype = resolveopt(v:sub(3),longopts,opts)
@@ -101,12 +101,15 @@ local function getopt(optstring,args,longopts,skipunknown)
         end
         opttype = nil
       else
-        unparsed = k
+        nonoptidx = k
         break
       end
   end
+  for k=nonoptidx,#args do
+    nonopts[k-nonoptidx+1] = args[k]
+  end
   if opttype then return false, "Missing value for '"..lastopt.."'", lastopt end
-  return result, (unparsed and unparsed <= #args and unparsed), skipunknown and erropts
+  return result, nonopts, skipunknown and erropts
 end
 --[[
 opts, nonopts, unopts = getopt("asd~", arg, {testme=argtype.one},true)
