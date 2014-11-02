@@ -1,11 +1,11 @@
-#!/usr/bin/env luajit 
+#!/usr/bin/env luajit
 
 local VERSION = "v0.1"
 local LIBPATH = '%lib/?.lua'
 local AURRPC = "https://aur.archlinux.org/rpc.php?v=3&type="
 local AURCATEGORIES = {[1]=false, [2]="daemons", [3]="devel", [4]="editors",
-        [5]="emulators", [6]="games", [7]="gnome", [8]="i18n", [9]="kde", 
-        [10]="lib", [11]="modules", [12]="multimedia", [13]="network", 
+        [5]="emulators", [6]="games", [7]="gnome", [8]="i18n", [9]="kde",
+        [10]="lib", [11]="modules", [12]="multimedia", [13]="network",
         [14]="office", [15]="science", [16]="system", [17]="x11", [18]="xfce",
         [19]="kernels", [20]="fonts"}
 do
@@ -14,10 +14,10 @@ do
     if v then AURCATEGORIES[v] = k end
   end
 end
-local AURFIELDS = {'ID', 'Name', 'PackageBaseID', 'PackageBase', 'Version', 
+local AURFIELDS = {'ID', 'Name', 'PackageBaseID', 'PackageBase', 'Version',
       'CategoryID', 'Category', 'Description', 'URL', 'URLPath', 'NumVotes',
       'OutOfDate', 'Maintainer', 'FirstSubmitted', 'LastModified', 'Depends',
-      'MakeDepends', 'CheckDepends', 'OptDepends', 'Conflicts', 'Provides', 
+      'MakeDepends', 'CheckDepends', 'OptDepends', 'Conflicts', 'Provides',
       'Replaces', 'Groups', 'License'}
 
 local ffi=require("ffi")
@@ -48,11 +48,11 @@ local ansiseq=require("ansiseq")
 
 local enum = {}
 function enum.bor(a, b)
-    return ffi.cast(ffi.typeof(a), 
+    return ffi.cast(ffi.typeof(a),
       bit.bor(tonumber(a),tonumber(ffi.cast(ffi.typeof(a), b))))
 end
 function enum.band(a, b)
-    return ffi.cast(ffi.typeof(a), 
+    return ffi.cast(ffi.typeof(a),
       bit.band(tonumber(a), tonumber(ffi.cast(ffi.typeof(a), b))))
 end
 function enum.hasset(a, b)
@@ -134,12 +134,12 @@ function AURPC:getbaseinfo(pkgbase)
   pkginfo.URLPath=info:match('<a href="([^"]+)"%s*>%s*Download%s')
   pkginfo.CategoryID=info:match('<td>%s*<a href="/packages/%?C=(%d+)">')
   pkginfo.OutOfDate=info:match('<li><span class="flagged">%s*([^<][^<]-)%s*</span></li>')
-  for k,v in 
+  for k,v in
     info:gmatch("<tr>%s*<th>%s*([^<:]*):?%s*</th>%s*<td>%s*%b<>%s*([^<]*[^<%s])%s*%b<>%s*</td>%s*</tr>")
   do
     pkginfo[translate[k] or k:gsub('%s+','')] = v
   end
-  for k,v in 
+  for k,v in
     info:gmatch("<tr>%s*<th>%s*([^<:]*):?%s*</th>%s*<td>%s*([^<]*[^<%s])%s*</td>%s*</tr>")
   do
     pkginfo[translate[k] or k:gsub('%s+','')] = v
@@ -170,7 +170,7 @@ function BaseTree:add(pkg)
 end
 
 
-function get_foreign_pkgs(a) 
+function get_foreign_pkgs(a)
     local dbs = a:get_syncdbs()
     local pkg = a:get_localdb():get_pkgcache()
     local fpkgs = {}
@@ -211,7 +211,7 @@ function AURPC:getupdates()
 end
 
 function AURPC:download(pkg)
-  
+
 end
 
 local Verbosity = {QUIET=-1,DEFAULT=0,VERBOSE=1}
@@ -222,9 +222,9 @@ if not options then
   io.stderr:write(nonopts)
   os.exit(1)
 elseif options.h then
-local help='lauri '..VERSION..[=[ 
+local help='lauri '..VERSION..[=[
 (C) 2014 Andreas Bosch <code@progandy.de>
-Usage: lauri [ -c auto|always|never ] [ -himsu ] [ -t [ SEARCHTYPE ] ] SEARCH_OR_PACKAGE... 
+Usage: lauri [ -c auto|always|never ] [ -himsu ] [ -t [ SEARCHTYPE ] ] SEARCH_OR_PACKAGE...
   -h        This help
 
   -c COLOR  colorize output auto/always/never (default: auto, show color in tty)
@@ -289,7 +289,7 @@ function simplewrap(text,length,indent,firstlength)
   for n,w in text:gmatch("(\n?)%s*(%S+)") do
     if lines[i] == nil then
       lines[i] = w
-    elseif (n == '\n') or (#lines[i] + 1 + #w > len) then 
+    elseif (n == '\n') or (#lines[i] + 1 + #w > len) then
       i = i+1
       len = length
       lines[i] = w
@@ -319,7 +319,7 @@ function printpkg(pkg,fields)
       print(line:fmt(k, simplewrap(tostring(v), width, indent)))
     end
   end
-  
+
 end
 
 function AURPC:printbase(base)
@@ -482,9 +482,10 @@ resolve deps:
 
 9: install depends
 10: tempinstall depends
-11: loop through makepkg, 
+11: loop through makepkg,
     prepare commands with split packages and asdepends switches
 12: remove tempinstall depends
 13: remove aur tempinstall
 ]]
+
 --: vim: set ts=2 sw=2 tw=80 et :--
