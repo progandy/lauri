@@ -376,7 +376,7 @@ function dosearch(aur, terms)
     os.exit(3)
   end
   local pkginfos = aur:request('search', p)
-  local restmpl = "&[bright]%s &[green]%s&[reset] (%d)"
+  local restmpl = "&[bright;magenta]aur/&[defaultfg]%s &[green]%s&[reset] &[cyan](%d)&[reset]"
   table.sort(pkginfos, function(a,b) return a.Name < b.Name end)
   for _,pkg in ipairs(pkginfos) do
   -- filter more here. only description or only pkgname
@@ -392,7 +392,7 @@ function doupdate(aur)
     io.stderr:write("No updates available in the AUR.\n")
     os.exit(1)
   end
-  local restmpl = "&[bright]%s &[green]%s&[reset] &[dim white](%s)&[reset]"
+  local restmpl = "&[bright]%s &[green]%s&[reset] &[red](%s)&[reset]"
   for i=1,#u do
     print(restmpl:fmt(u[i].Name, u[i].Version, u[i].OldVersion))
   end
