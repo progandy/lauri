@@ -216,7 +216,7 @@ end
 
 local options,nonopts = opt.getopt("c:himsu", arg)
 if not options then
-  io.stderr:write(nonoptidx)
+  io.stderr:write(nonopts)
   os.exit(1)
 elseif options.h then
 local help='lauri '..VERSION..[=[ 
