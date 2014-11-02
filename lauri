@@ -214,7 +214,10 @@ function AURPC:download(pkg)
   
 end
 
-local options,nonopts = opt.getopt("c:himsu", arg)
+local Verbosity = {QUIET=-1,DEFAULT=0,VERBOSE=1}
+local verbosity
+
+local options,nonopts = opt.getopt("c:himsuqv", arg)
 if not options then
   io.stderr:write(nonopts)
   os.exit(1)
@@ -231,9 +234,33 @@ Usage: lauri [ -c auto|always|never ] [ -himsu ] [ -t [ SEARCHTYPE ] ] SEARCH_OR
   -s        search package
   -u        search for updates
 ]=]
-print(help)
-os.exit(0)
+  print(help)
+  os.exit(0)
+elseif options.q and options.v then
+  io.stderr:write("Options verbose and quiet conflict.\n")
+  os.exit(2)
 end
+
+if options.q then
+verbosity = Verbosity.QUIET
+elseif options.v then
+verbosity = Verbosity.VERBOSE
+end
+
+do
+  local i=0
+  for _,v in ipairs({'b','i','m','s','u'}) do
+    if options[v] then i = i+1 end
+  end
+  if i == 0 then
+    io.stderr:write("No action specified.\n")
+    os.exit(2)
+  elseif i > 1 then
+    io.stderr:write("Info, search and update are mutually exclusive.\n")
+    os.exit(2)
+  end
+end
+
 if options.c == nil or options.c == 'auto' then
   options.c = ffi.C.isatty(1) ~= 0
 elseif options.c == 'always' or options.c == 'true' or options.c == 'yes' then
@@ -256,19 +283,6 @@ end
 
 aur = AURPC.new(pacman)
 
-do
-  local i=0
-  for _,v in ipairs({'b','i','m','s','u'}) do
-    if options[v] then i = i+1 end
-  end
-  if i == 0 then
-    io.stderr:write("No action specified.\n")
-    os.exit(2)
-  elseif i > 1 then 
-    io.stderr:write("Info, search and update are mutually exclusive.\n")
-    os.exit(2)
-  end
-end
 
 function simplewrap(text,length,indent,firstlength)
   local lines,i,len,w={},1,firstlength or length
@@ -355,7 +369,7 @@ function matchall(s, patterns)
   end
   return true
 end
-function dosearch(aur, terms)
+function dosearch(aur, terms, verbosity)
   local p=""
   if #nonopts == 0 then
     io.stderr:write("Missing search terms.\n")
@@ -381,8 +395,15 @@ function dosearch(aur, terms)
   for _,pkg in ipairs(pkginfos) do
   -- filter more here. only description or only pkgname
     if matchall({pkg.Name , pkg.Description}, nonopts) then
-      print(restmpl:fmt(pkg.Name, pkg.Version, pkg.NumVotes))
-      print('',pkg.Description)
+      if verbosity == Verbosity.QUIET then
+        print(pkg.Name)
+      elseif verbosity == Verbosity.VERBOSE then
+        printpkg(pkg)
+        print()
+      else
+        print(restmpl:fmt(pkg.Name, pkg.Version, pkg.NumVotes))
+        print('  '..pkg.Description)
+      end
     end
   end
 end
@@ -405,7 +426,7 @@ elseif options.i then
 elseif options.m then
   domsearch(aur, nonopts)
 elseif options.s then
-  dosearch(aur, nonopts)
+  dosearch(aur, nonopts, verbosity)
 elseif options.u then
   doupdate(aur)
 else
