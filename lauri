@@ -110,7 +110,7 @@ function AURPC:request(rtype, args)
   if res ~= curl.CURLE_OK then return false, c:strerror(res) end
   local pkginfos = json:decode(data:read())
   data:clear()
-  if pkginfos.type == 'error' then return false, pkginfos.results end
+  if pkginfos.type == 'error' then return false, pkginfos.error, pkginfos.results end
   return pkginfos.results, pkginfos.resultcount, pkginfos.type
 end
 function AURPC:getinfo(pkgs)
@@ -214,13 +214,22 @@ function AURPC:download(pkg)
 
 end
 
+
+function fxerror(e,f,...)
+  io.stderr:write(string.format(f,...))
+  os.exit(e and tonumber(e) or 1)
+end
+function pxerror(e,s)
+  io.stderr:write(s)
+  os.exit(e and tonumber(e) or 1)
+end
+
 local Verbosity = {QUIET=-1,DEFAULT=0,VERBOSE=1}
 local verbosity
 
 local options,nonopts = opt.getopt("c:himsuqv", arg)
 if not options then
-  io.stderr:write(nonopts)
-  os.exit(1)
+  pxerror(1, nonopts)
 elseif options.h then
 local help='lauri '..VERSION..[=[
 (C) 2014 Andreas Bosch <code@progandy.de>
@@ -237,8 +246,7 @@ Usage: lauri [ -c auto|always|never ] [ -himsu ] [ -t [ SEARCHTYPE ] ] SEARCH_OR
   print(help)
   os.exit(0)
 elseif options.q and options.v then
-  io.stderr:write("Options verbose and quiet conflict.\n")
-  os.exit(2)
+  pxerror(2, "Options verbose and quiet conflict.\n")
 end
 
 if options.q then
@@ -253,11 +261,9 @@ do
     if options[v] then i = i+1 end
   end
   if i == 0 then
-    io.stderr:write("No action specified.\n")
-    os.exit(2)
+    pxerror(2, "No action specified.\n")
   elseif i > 1 then
-    io.stderr:write("Info, search and update are mutually exclusive.\n")
-    os.exit(2)
+    pxerror(2, "Info, search and update are mutually exclusive.\n")
   end
 end
 
@@ -326,25 +332,13 @@ function AURPC:printbase(base)
   aur:printpkg(base, { 'Packages', 'Submitter', 'LastPackager' })
 end
 
---[[
-print("=====")
-
-function AURPC:printbase(base)
-  aur:printpkg(base, { 'Packages', 'Submitter', 'LastPackager' })
-end
-
-aur:printbase(aur:getbaseinfo("cower"))
-print("")
-]]
 function doinfo(aur, targets)
   if not targets or #targets == 0 then
-    io.stderr:write("Missing package names.\n")
-    os.exit(3)
+    fxerror(3,"Missing package names.\n")
   end
   local p,m = aur:getinfo(targets)
-  if not p then
-    io.stderr:write("Package(s) not found in AUR.\n")
-    os.exit(3)
+  if not p or #p == 0 then
+    fxerror(3,"Package(s) not found in AUR.\n")
   end
   local a,err={},{}
   for _,n in ipairs(p) do a[n.Name] = n end
@@ -372,8 +366,7 @@ end
 function dosearch(aur, terms, verbosity)
   local p=""
   if #nonopts == 0 then
-    io.stderr:write("Missing search terms.\n")
-    os.exit(3)
+    pxerror(3, "Missing search terms.\n")
   end
   -- find the longest search term for initial search
   for i=1,#nonopts do
@@ -384,12 +377,12 @@ function dosearch(aur, terms, verbosity)
       p = pattern_extract_literal(nonopts[i])
       if #p > 0 then break end
     end
+    if #p == 0 then
+      pxerror(3, "Missing a pattern-free search term.\n")
+    end
   end
-  if #p == 0 then
-    io.stderr:write("Missing a pattern-free search term.\n")
-    os.exit(3)
-  end
-  local pkginfos = aur:request('search', p)
+  local pkginfos,errmsg = aur:request('search', p)
+  if not pkginfos then fxerror(3, 'Error: %s\n', errmsg) end
   local restmpl = "&[bright;magenta]aur/&[defaultfg]%s &[green]%s&[reset] &[cyan](%d)&[reset]"
   table.sort(pkginfos, function(a,b) return a.Name < b.Name end)
   for _,pkg in ipairs(pkginfos) do
@@ -410,8 +403,7 @@ end
 function doupdate(aur)
   local u u=aur:getupdates()
   if not u or #u == 0 then
-    io.stderr:write("No updates available in the AUR.\n")
-    os.exit(1)
+    pxerror(4, "No updates available in the AUR.\n")
   end
   local restmpl = "&[bright]%s &[green]%s&[reset] &[red](%s)&[reset]"
   for i=1,#u do
@@ -430,7 +422,7 @@ elseif options.s then
 elseif options.u then
   doupdate(aur)
 else
-  io.stderr:write("Missing action\n")
+  pxerror(1, "Missing action\n")
 end
 
 os.exit()
