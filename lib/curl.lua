@@ -1388,17 +1388,18 @@ function M.WriteBuffer()
     end)
   local __gc = ffi.gc(ffi.new("void*"),
     function() cb:free(); cb=nil end)
-  return {
-    getwritecb = function(self) return cb end,
-    write = function(self,text)
-        local len=#text
-        if len < 1 then return 0 end
-        buffer[#buffer+1] = text
-        return len
-      end,
-    read = function(self) return table.concat(buffer) end,
-    clear = function(self) buffer = {} end
-  }
+  return setmetatable({}, {cb=cb,buffer=buffer,ffigc=__gc, __index = {
+      getwritecb = function(self) return cb end,
+      write = function(self,text)
+          local len=#text
+          if len < 1 then return 0 end
+          buffer[#buffer+1] = text
+          return len
+        end,
+      read = function(self) return table.concat(buffer) end,
+      clear = function(self) buffer = {} end
+    }
+  })
 end
 
 
