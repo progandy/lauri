@@ -139,6 +139,7 @@ function AURPC:getbaseinfo(pkgbase)
   c:setopt("CURLOPT_URL", url)
   if curl.CURLE_OK ~= c:perform() then return nil end
   local info = data:read():match('<div id="pkgdetails" .-\n</div>')
+  if not info then return false, "Packagebase not found in AUR." end
   local pkginfo,k,v={PackageBase=pkgbase}
   pkginfo.URL=url:gsub("%?setlang=en$", "")
   pkginfo.URLPath=info:match('<a href="([^"]+)"%s*>%s*Download%s')
@@ -352,6 +353,7 @@ function printpkg(pkg,fields)
   local line="&[bright]%-15s :&[reset] %s"
   local indent, width=string.rep(' ', 18), TERMWIDTH-18
   local indentex, widthex = string.rep(' ', 20), TERMWIDTH-20
+  if not pkg.Category then pkg.Category = AURCATEGORIES[pkg.CategoryID] end
   for _,k in ipairs(fields or AURFIELDS) do
     local v = pkg[k]
     if type(v) == 'table' then
@@ -371,11 +373,38 @@ function printpkg(pkg,fields)
 
 end
 
-function AURPC:printbase(base)
-  aur:printpkg(base, { 'Packages', 'Submitter', 'LastPackager' })
+AURBASEFIELDS = {unpack(AURFIELDS)}
+AURBASEFIELDS[#AURBASEFIELDS+1] = "Submitter"
+AURBASEFIELDS[#AURBASEFIELDS+1] = "LastPackager"
+AURBASEFIELDS[#AURBASEFIELDS+1] = "Packages"
+function printbase(base)
+  printpkg(base, AURBASEFIELDS)
+end
+function dobaseinfo(aur, targets, verbosity)
+  if not targets or #targets == 0 then
+    fxerror(3,"Missing packagebase names.\n")
+  end
+  local a,err={},{}
+  local restmpl = "&[bright]%s&[reset]"
+  for _,n in ipairs(targets) do
+    local p,m = aur:getbaseinfo(n)
+    if p then
+      if verbosity == Verbosity.QUIET then
+        print(restmpl:fmt(p.PackageBase, p.Version))
+        print('  '..wrapper(table.concat(p.Packages,', '), TERMWIDTH, '  '))
+      else
+        printbase(p)
+        print()
+      end
+    else
+      err[#err+1] = "Packagebase '" .. n .. "' not found in AUR.\n"
+    end
+  end
+  if #err > 0 then pxerror(3,table.concat(err)) end
 end
 
-function doinfo(aur, targets)
+
+function doinfo(aur, targets, verbosity)
   if not targets or #targets == 0 then
     fxerror(3,"Missing package names.\n")
   end
@@ -384,11 +413,17 @@ function doinfo(aur, targets)
     fxerror(3,"Package(s) not found in AUR.\n")
   end
   local a,err={},{}
+  local restmpl = "&[bright]%s &[green]%s&[reset]"
   for _,n in ipairs(p) do a[n.Name] = n end
   for _,n in ipairs(targets) do
     if a[n] then
-      printpkg(a[n])
-      print()
+      if verbosity == Verbosity.QUIET then
+        print(restmpl:fmt(a[n].Name, a[n].Version))
+        print('  '..wrapper(a[n].Description, TERMWIDTH, '  '))
+      else
+        printpkg(a[n])
+        print()
+      end
     else
       err[#err+1] = "Package '" .. n .. "' not found in AUR.\n"
     end
@@ -499,9 +534,9 @@ function doupdate(aur)
 end
 
 if options.b then
-  dobaseinfo(aur, nonopts)
+  dobaseinfo(aur, nonopts, verbosity)
 elseif options.i then
-  doinfo(aur, nonopts)
+  doinfo(aur, nonopts, verbosity)
 elseif options.m then
   domsearch(aur, nonopts)
 elseif options.s then
