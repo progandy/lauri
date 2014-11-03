@@ -1,5 +1,5 @@
 #!/usr/bin/env luajit
-
+local TERMWIDTH = 80
 local VERSION = "v0.1"
 local LIBPATH = '%lib/?.lua'
 local AURRPC = "https://aur.archlinux.org/rpc.php?v=3&type="
@@ -224,24 +224,51 @@ function pxerror(e,s)
   os.exit(e and tonumber(e) or 1)
 end
 
+function simplewrap(text,length,indent,firstlength,subindent)
+  local lines,i,len,w={},1,firstlength or length
+  for n,w in text:gmatch("(\n?)%s*(%S+)") do
+    if lines[i] == nil then
+      lines[i] = w
+    elseif (n == '\n') or (#lines[i] + 1 + #w > len) then
+      i = i+1
+      len = length
+      if subindent and n ~= '\n' then
+        lines[i] = subindent .. w
+      else
+        lines[i] = w
+      end
+    else
+      lines[i] = lines[i] .. ' ' .. w
+    end
+  end
+  return table.concat(lines, '\n'..indent)
+end
+
 local Verbosity = {QUIET=-1,DEFAULT=0,VERBOSE=1}
 local verbosity
+local istty = ffi.C.isatty(1) ~= 0
 
-local options,nonopts = opt.getopt("c:himsuqv", arg)
+local options,nonopts = opt.getopt("c:bhimsuqvw:", arg)
 if not options then
   pxerror(1, nonopts)
 elseif options.h then
-local help='lauri '..VERSION..[=[
+  local help='lauri '..VERSION..[=[
 (C) 2014 Andreas Bosch <code@progandy.de>
-Usage: lauri [ -c auto|always|never ] [ -himsu ] [ -t [ SEARCHTYPE ] ] SEARCH_OR_PACKAGE...
-  -h        This help
+Usage: lauri <action> <options> TERMS
 
-  -c COLOR  colorize output auto/always/never (default: auto, show color in tty)
+  Actions supported:
+  -h        This help
   -b        display base package info
   -i        display package info
   -m        search for maintainer
   -s        search package
   -u        search for updates
+
+  Options:
+  -c WHEN   colorize output auto/always/never (default: auto, show color in tty)
+  -w WIDTH  wordwrap width, disable with 0 (min: 40, default: 80 in tty, else 0)
+  -q        quiet, minimal output
+  -v        verbose output
 ]=]
   print(help)
   os.exit(0)
@@ -250,9 +277,9 @@ elseif options.q and options.v then
 end
 
 if options.q then
-verbosity = Verbosity.QUIET
+  verbosity = Verbosity.QUIET
 elseif options.v then
-verbosity = Verbosity.VERBOSE
+  verbosity = Verbosity.VERBOSE
 end
 
 do
@@ -268,13 +295,23 @@ do
 end
 
 if options.c == nil or options.c == 'auto' then
-  options.c = ffi.C.isatty(1) ~= 0
+  options.c = istty
 elseif options.c == 'always' or options.c == 'true' or options.c == 'yes' then
   options.c = true
 else
   options.c = false
 end
 string.fmt = options.c and string.formatc or function(self,...) return self:stripcsi():format(...) end
+options.w = tonumber(options.w)
+local wrapper=simplewrap
+if options.w and options.w > 0 then
+  if options.w < 40 then options.w = 40 end
+  TERMWIDTH = options.w
+elseif istty and options.w ~= 0 then
+  TERMWIDTH = 80
+else
+  wrapper = function(s,_,i,...) return string.gsub(s, '\n', '\n'..i) end
+end
 
 curl.init(curl.CURL_GLOBAL_ALL)
 errno=ffi.new("alpm_errno_t[1]")
@@ -289,40 +326,24 @@ end
 
 aur = AURPC.new(pacman)
 
-
-function simplewrap(text,length,indent,firstlength)
-  local lines,i,len,w={},1,firstlength or length
-  for n,w in text:gmatch("(\n?)%s*(%S+)") do
-    if lines[i] == nil then
-      lines[i] = w
-    elseif (n == '\n') or (#lines[i] + 1 + #w > len) then
-      i = i+1
-      len = length
-      lines[i] = w
-    else
-      lines[i] = lines[i] .. ' ' .. w
-    end
-  end
-  return table.concat(lines, '\n'..indent)
-end
-
 function printpkg(pkg,fields)
   local line="&[bright]%-15s :&[reset] %s"
-  local indent, width=string.rep(' ', 18), 79-18
-  local indentex, widthex = string.rep(' ', 19), 79-20
+  local indent, width=string.rep(' ', 18), TERMWIDTH-18
+  local indentex, widthex = string.rep(' ', 20), TERMWIDTH-20
   for _,k in ipairs(fields or AURFIELDS) do
     local v = pkg[k]
     if type(v) == 'table' then
       if k == 'OptDepends' then
-        print(line:fmt(k, simplewrap(v[1], widthex, indent, width)))
+        print(line:fmt(k, wrapper(table.concat(v, '\n'), width, indent, width, '  ')))
+        --[[print(line:fmt(k, wrapper(v[1], widthex, indent, width, '  ')))
         for i=2,#v do
-          print((' '):rep(17) .. simplewrap(v[i], widthex, indentex, width))
-        end
+          print((' '):rep(19) .. wrapper(v[i], widthex, indentex, width, '  '))
+        end]]
       else
-        print(line:fmt(k, simplewrap(table.concat(v,', '), width, indent)))
+        print(line:fmt(k, wrapper(table.concat(v,', '), width, indent)))
       end
     elseif v then
-      print(line:fmt(k, simplewrap(tostring(v), width, indent)))
+      print(line:fmt(k, wrapper(tostring(v), width, indent)))
     end
   end
 
@@ -439,7 +460,7 @@ function dosearch(aur, terms, verbosity)
         print()
       else
         print(restmpl:fmt(pkg.Name, pkg.Version, pkg.NumVotes))
-        print('  '..pkg.Description)
+        print('  '..wrapper(pkg.Description, TERMWIDTH, '  '))
       end
     end
   end
