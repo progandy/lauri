@@ -221,6 +221,7 @@ function fxerror(e,f,...)
 end
 function pxerror(e,s)
   io.stderr:write(s)
+  if string.sub(s, -1) ~= '\n' then io.stderr:write('\n') end
   os.exit(e and tonumber(e) or 1)
 end
 
@@ -244,6 +245,30 @@ function simplewrap(text,length,indent,firstlength,subindent)
   return table.concat(lines, '\n'..indent)
 end
 
+function gethelp()
+return 'lauri '..VERSION..[=[
+(C) 2014 Andreas Bosch <code@progandy.de>
+Usage: lauri <action> [ <options> ] TERMS ...
+
+Actions (mutually exclusive):
+  -h        This help
+  -b        display base package info
+  -i        display package info
+  -m        search for maintainer
+  -s        search for package(s)
+  -u        check for updates
+  -d        download package(s)
+ Exception: -u and -d can be combined
+
+Options:
+  -r        include AUR dependencies recursively (info, update, download)
+  -c WHENC  colorize output; values: auto/always/never (default: auto, detect tty)
+  -w WIDTH  wordwrap width; disable with 0 (min: 40, default: 80 in tty, else 0)
+  -q        quiet, minimal output
+  -v        verbose output
+]=]
+end
+
 local Verbosity = {QUIET=-1,DEFAULT=0,VERBOSE=1}
 local verbosity
 local istty = ffi.C.isatty(1) ~= 0
@@ -252,25 +277,7 @@ local options,nonopts = opt.getopt("c:bhimsuqvw:", arg)
 if not options then
   pxerror(1, nonopts)
 elseif options.h then
-  local help='lauri '..VERSION..[=[
-(C) 2014 Andreas Bosch <code@progandy.de>
-Usage: lauri <action> <options> TERMS
-
-  Actions supported:
-  -h        This help
-  -b        display base package info
-  -i        display package info
-  -m        search for maintainer
-  -s        search package
-  -u        search for updates
-
-  Options:
-  -c WHEN   colorize output auto/always/never (default: auto, show color in tty)
-  -w WIDTH  wordwrap width, disable with 0 (min: 40, default: 80 in tty, else 0)
-  -q        quiet, minimal output
-  -v        verbose output
-]=]
-  print(help)
+  io.stdout:write(gethelp())
   os.exit(0)
 elseif options.q and options.v then
   pxerror(2, "Options verbose and quiet conflict.\n")
@@ -284,11 +291,13 @@ end
 
 do
   local i=0
-  for _,v in ipairs({'b','i','m','s','u'}) do
+  for _,v in ipairs({'b','i','m','s','u','d'}) do
     if options[v] then i = i+1 end
   end
   if i == 0 then
-    pxerror(2, "No action specified.\n")
+    pxerror(2, gethelp())
+  elseif i == 2 and options.u and options.d then
+    -- this is allowed to download updates
   elseif i > 1 then
     pxerror(2, "Info, search and update are mutually exclusive.\n")
   end
