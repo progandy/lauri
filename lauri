@@ -25,6 +25,16 @@ ffi.cdef[[
 char *getcwd(char *, size_t);
 void freecwd(char*) __asm__("free");
 int isatty(int);
+static const int STDOUT=1;
+static const int TIOCGWINSZ  = 0x5413;
+struct winsize
+{
+  unsigned short ws_row;  /* rows, in characters */
+  unsigned short ws_col;  /* columns, in characters */
+  unsigned short ws_xpixel; /* horizontal size, pixels */
+  unsigned short ws_ypixel; /* vertical size, pixels */
+};
+int ioctl(int fd, int cmd, ... );
 ]]
 
 local getexepath = function()
@@ -271,7 +281,7 @@ end
 
 local Verbosity = {QUIET=-1,DEFAULT=0,VERBOSE=1}
 local verbosity
-local istty = ffi.C.isatty(1) ~= 0
+local istty = ffi.C.isatty(ffi.C.STDOUT) ~= 0
 
 local options,nonopts = opt.getopt("c:bhimsuqvw:", arg)
 if not options then
@@ -317,7 +327,10 @@ if options.w and options.w > 0 then
   if options.w < 40 then options.w = 40 end
   TERMWIDTH = options.w
 elseif istty and options.w ~= 0 then
-  TERMWIDTH = 80
+  local screen_size = ffi.new("struct winsize[1]")
+  ffi.C.ioctl(ffi.C.STDOUT, ffi.C.TIOCGWINSZ, screen_size)
+  TERMWIDTH = screen_size[0].ws_col;
+  if TERMWIDTH < 40 then TERMWIDTH = 40 end;
 else
   wrapper = function(s,_,i,...) return string.gsub(s, '\n', '\n'..i) end
 end
