@@ -350,7 +350,51 @@ function doinfo(aur, targets)
       err[#err+1] = "Package '" .. n .. "' not found in AUR.\n"
     end
   end
-  if #err > 0 then io.stderr:write(table.concat(err)) end
+  if #err > 0 then pxerror(3,table.concat(err)) end
+end
+function pattern_extract_literal(p)
+  local LIT,ESC,ALT=0,1,2
+  local consume,state = 0,LIT
+  local result,bestresult = '',''
+  for c in p:gmatch('.') do
+    if consume > 0 then
+      consume = consume - 1
+    elseif state == LIT then
+      if c == '%' then
+        state = ESC
+        result = ''
+      elseif c == '?' or c == '-' or c == '*' or c == '+' then
+        if result == bestresult then 
+          result = result:sub(1,-2)
+          bestresult = result
+        else
+          result = result:sub(1,-2)
+        end
+      elseif c == '(' or c == ')' then
+        -- no special handling
+      elseif c == '.' then
+        result = ''
+      elseif c == '[' then
+        result = ''
+        state = ALT
+      else
+        result = result .. c
+        if #result > #bestresult then bestresult = result end
+      end
+    elseif state == ESC then
+      state = LIT
+      if c == 'b' then
+        consume = 2
+      end
+    elseif state == ALT then
+      if c == '%' then
+        consume = 1
+      elseif c == ']' then
+        state = LIT
+      end
+    end
+  end
+  return bestresult
 end
 function matchall(s, patterns)
   if type(s) ~= 'table' then s = {tostring(s)} end
