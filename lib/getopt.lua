@@ -50,7 +50,7 @@ local function getopt(optstring,args,longopts,skipunknown)
           opttype=nil
           erropts[#erropts+1] = v:sub(3)
         elseif opttype == true then
-          result[lastopt] = true
+          result[lastopt] = (tonumber(result[lastopt]) or 0) + 1
           opttype = nil
         elseif opttype == 0 then
           if not result[lastopt] then result[lastopt] = true end
@@ -71,7 +71,7 @@ local function getopt(optstring,args,longopts,skipunknown)
             if not skipunknown then return false, "Unknown option '"..lastopt.."'", lastopt end
             erropts[#erropts+1] = lastopt
           elseif opttype == true then
-            result[lastopt] = true
+            result[lastopt] = (tonumber(result[lastopt]) or 0) + 1
             opttype = nil
           elseif opttype == 0 then
             if not result[lastopt] then result[lastopt] = true end

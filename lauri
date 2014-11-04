@@ -296,8 +296,10 @@ end
 
 if options.q then
   verbosity = Verbosity.QUIET
-elseif options.v then
+elseif options.v == 1 then
   verbosity = Verbosity.VERBOSE
+elseif options.v > 1 then
+  verbosity = Verbosity.EXTRAVERBOSE
 end
 
 do
@@ -402,7 +404,6 @@ function dobaseinfo(aur, targets, verbosity)
   end
   if #err > 0 then pxerror(3,table.concat(err)) end
 end
-
 
 function doinfo(aur, targets, verbosity)
   if not targets or #targets == 0 then
@@ -512,7 +513,7 @@ function dosearch(aur, terms, verbosity)
     if matchall({pkg.Name , pkg.Description}, nonopts) then
       if verbosity == Verbosity.QUIET then
         print(pkg.Name)
-      elseif verbosity == Verbosity.VERBOSE then
+      elseif verbosity >= Verbosity.VERBOSE then
         printpkg(pkg)
         print()
       else
