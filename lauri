@@ -579,7 +579,7 @@ elseif options.m then
 elseif options.s then
   dosearch(aur, nonopts, verbosity)
 elseif options.u then
-  doupdate(aur)
+  doupdate(aur, verbosity)
 else
   pxerror(1, "Missing action\n")
 end
