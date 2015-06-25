@@ -281,7 +281,7 @@ Options:
 end
 
 local Verbosity = {QUIET=-1,DEFAULT=0,VERBOSE=1}
-local verbosity
+local verbosity = Verbosity.DEFAULT
 local istty = ffi.C.isatty(ffi.C.STDOUT) ~= 0
 
 local options,nonopts = opt.getopt("c:bhimsuqvw:", arg)
@@ -298,7 +298,7 @@ if options.q then
   verbosity = Verbosity.QUIET
 elseif options.v == 1 then
   verbosity = Verbosity.VERBOSE
-elseif options.v > 1 then
+elseif options.v and options.v > 1 then
   verbosity = Verbosity.EXTRAVERBOSE
 end
 
@@ -546,14 +546,27 @@ function dosearch(aur, terms, verbosity)
     end
   end
 end
-function doupdate(aur)
+function doupdate(aur, verbosity)
   local u u=aur:getupdates()
   if not u or #u == 0 then
     pxerror(4, "No updates available in the AUR.\n")
   end
   local restmpl = "&[bright]%s &[green]%s&[reset] &[red](%s)&[reset]"
+  local verbose=false
+  if verbosity and verbosity >= Verbosity.VERBOSE then
+    verbose = true
+    restmpl = restmpl .. ' &[dim]%s&[reset]'
+  end
   for i=1,#u do
-    print(restmpl:fmt(u[i].Name, u[i].Version, u[i].OldVersion))
+    if verbose then
+      print(wrapper(restmpl:fmt(u[i].Name, u[i].Version, 
+                                u[i].OldVersion, u[i].URLPath), TERMWIDTH, '  '))
+    elseif verbosity == Verbosity.QUIET then
+      print(u[i].Name)
+    else
+      print(wrapper(restmpl:fmt(u[i].Name, u[i].Version, 
+                                u[i].OldVersion), TERMWIDTH, '  '))
+    end
   end
 end
 
