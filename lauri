@@ -35,6 +35,29 @@ struct winsize
   unsigned short ws_ypixel; /* vertical size, pixels */
 };
 int ioctl(int fd, int cmd, ... );
+typedef long int time_t;
+struct tm {
+  int tm_sec;    /* Seconds (0-60) */
+  int tm_min;    /* Minutes (0-59) */
+  int tm_hour;   /* Hours (0-23) */
+  int tm_mday;   /* Day of the month (1-31) */
+  int tm_mon;    /* Month (0-11) */
+  int tm_year;   /* Year - 1900 */
+  int tm_wday;   /* Day of the week (0-6, Sunday = 0) */
+  int tm_yday;   /* Day in the year (0-365, 1 Jan = 0) */
+  int tm_isdst;  /* Daylight saving time */
+  long int tm_gmtoff;
+  const char *tm_zone;
+};
+void tzset (void);
+struct tm *localtime(const time_t* timep);
+struct tm *localtime_r(const time_t *timep, struct tm *result);
+time_t mktime(struct tm *tm);
+size_t strftime(char *s, size_t max, const char *format,
+                       const struct tm *tm);
+char *strptime(const char *s, const char *format, struct tm *tm);
+int setenv(const char *name, const char *value, int overwrite);
+int unsetenv(const char *name);
 ]]
 
 local getexepath = function()
@@ -369,7 +392,44 @@ function printpkg(pkg,fields)
         print(line:fmt(k, wrapper(table.concat(v,', '), width, indent)))
       end
     elseif v then
-      print(line:fmt(k, wrapper(tostring(v), width, indent)))
+      if k == "LastModified" or k == "FirstSubmitted" or k == "OutOfDate" then
+        if v ~= '' and v ~= 0 then
+          local t, tm
+          if tonumber(v) then
+            t = ffi.new("time_t[1]", v)
+            tm = ffi.C.localtime(t)
+          else
+            tm = ffi.new("struct tm")
+            t = ffi.C.strptime(v, "%Y-%m-%d %H:%M", tm)
+            if t == nil or ffi.string(t) ~= "" then
+              tm = nil
+            else -- interpret all strings as GMT/UTC time
+              local tz = os.getenv("TZ")
+              ffi.C.setenv("TZ", "UTC", 1)
+              ffi.C.tzset()
+              t = ffi.C.mktime(tm)
+              t = ffi.new("time_t[1]", t)
+              if not tz then
+                ffi.C.unsetenv("TZ")
+              else
+                ffi.C.setenv("TZ", tz, 1)
+              end
+              ffi.C.tzset()
+              ffi.C.localtime_r(t, tm)
+              if tm.tm_year == 0 then tm = nil end
+            end
+          end
+          if tm ~= nil then
+            local s = ffi.new("char[256]")
+            ffi.C.strftime(s, 255, "%F %R %Z", tm)
+            t = ffi.string(s)
+            if t and t ~= '' then v = t end
+          end
+          print(line:fmt(k, wrapper(v, width, indent)))
+        end
+      else
+        print(line:fmt(k, wrapper(tostring(v), width, indent)))
+      end
     end
   end
 
