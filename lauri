@@ -16,8 +16,10 @@ do
     if v then AURCATEGORIES[v] = k end
   end
 end
+
+
 local AURFIELDS = {'ID', 'Name', 'PackageBaseID', 'PackageBase', 'Version',
-      'CategoryID', 'Category', 'Description', 'URL', 'URLPath', 'NumVotes',
+      'Category', 'Description', 'URL', 'URLPath', 'NumVotes',
       'OutOfDate', 'Maintainer', 'FirstSubmitted', 'LastModified', 'Depends',
       'MakeDepends', 'CheckDepends', 'OptDepends', 'Conflicts', 'Provides',
       'Replaces', 'Groups', 'License'}
@@ -168,7 +170,7 @@ function AURPC:getbaseinfo(pkgbase)
   local pkginfo,k,v={PackageBase=pkgbase}
   pkginfo.URL=url:gsub("%?setlang=en$", "")
   pkginfo.URLPath=info:match('<a href="([^"]+)"%s*>%s*Download%s')
-  pkginfo.CategoryID=info:match('<td>%s*<a href="/packages/%?C=(%d+)">')
+  --pkginfo.CategoryID=info:match('<td>%s*<a href="/packages/%?C=(%d+)">')
   pkginfo.OutOfDate=info:match('<li><span class="flagged">%s*([^<][^<]-)%s*</span></li>')
   for k,v in
     info:gmatch("<tr>%s*<th>%s*([^<:]*):?%s*</th>%s*<td>%s*%b<>%s*([^<]*[^<%s])%s*%b<>%s*</td>%s*</tr>")
@@ -385,7 +387,7 @@ function printpkg(pkg,fields)
   local line="&[bright]%-15s :&[reset] %s"
   local indent, width=string.rep(' ', 18), TERMWIDTH-18
   local indentex, widthex = string.rep(' ', 20), TERMWIDTH-20
-  if not pkg.Category then pkg.Category = AURCATEGORIES[pkg.CategoryID] end
+  if pkg.CategoryID and not pkg.Category then pkg.Category = AURCATEGORIES[pkg.CategoryID] end
   for _,k in ipairs(fields or AURFIELDS) do
     local v = pkg[k]
     if type(v) == 'table' then
