@@ -292,6 +292,7 @@ Actions (mutually exclusive):
   -s        search for package(s)
   -u        check for updates
   -d        download package(s)
+  -r        list AUR dependencies.
  Exception: -u and -d can be combined
 
 Options:
@@ -307,7 +308,7 @@ local Verbosity = {QUIET=-1,DEFAULT=0,VERBOSE=1}
 local verbosity = Verbosity.DEFAULT
 local istty = ffi.C.isatty(ffi.C.STDOUT) ~= 0
 
-local options,nonopts = opt.getopt("c:bhimsuqvw:", arg)
+local options,nonopts = opt.getopt("c:bhimrsuqvw:", arg)
 if not options then
   pxerror(1, nonopts)
 elseif options.h then
@@ -330,7 +331,7 @@ do
   for _,v in ipairs({'b','i','m','s','u','d'}) do
     if options[v] then i = i+1 end
   end
-  if i == 0 then
+  if i == 0 and not options.r then
     pxerror(2, gethelp())
   elseif i == 2 and options.u and options.d then
     -- this is allowed to download updates
@@ -630,6 +631,72 @@ function doupdate(aur, verbosity)
   end
 end
 
+
+function pkg_local_satisfier(pkgcache, dep)
+    return alpm.find_satisfier(pkgcache, dep) ~= nil
+end
+
+function pkg_sync_satisfier(handle, dblist, dep)
+    return alpm.find_dbs_satisfier(handle, dblist, dep) ~= nil
+end
+
+local pkgcache = pacman:get_localdb():get_pkgcache()
+local syncdbs = pacman:get_syncdbs()
+function deprecurse(aur, pkg)
+  local dep = {}
+  for _,d in ipairs(pkg.Depends) do
+    if not pkg_local_satisfier(pkgcache, d)
+      and not pkg_sync_satisfier(pacman, syncdbs, d)
+    then
+      dep[#dep+1] = d:match("^[^><= ]*")
+    end
+  end
+  if nil ~= pkg.MakeDepends then
+  for _,d in ipairs(pkg.MakeDepends) do
+    if not pkg_local_satisfier(pkgcache, d)
+      and not pkg_sync_satisfier(pacman, syncdbs, d)
+    then
+      dep[#dep+1] = d:match("^[^><= ]*")
+    end
+  end
+end
+  local p,m = aur:getinfo(dep)
+  local ret = {}
+  if p and #p > 0 then
+    ret = {unpack(p)}
+    for _,k in ipairs(p) do
+      local deps = deprecurse(aur, k)
+      for _,d in ipairs(deps) do
+        table.insert(ret, d)
+      end
+    end
+  end
+  return ret
+end
+
+function dodepends(aur, targets, verbosity)
+  if not targets or #targets ~= 1 then
+    fxerror(3,"Missing package names.\n")
+  end
+  local p,m = aur:getinfo(targets)
+  if not p or #p == 0 then
+    fxerror(3,"Package(s) not found in AUR.\n")
+  end
+  local deps = deprecurse(aur, p[1])
+  local a,err={},{}
+  local restmpl = "&[bright]%s &[green]%s&[reset]"
+  for _,n in ipairs(deps) do
+      if verbosity == Verbosity.QUIET then
+        print(restmpl:fmt(n.Name, n.Version))
+        print('  '..wrapper(n.Description, TERMWIDTH, '  '))
+      else
+        printpkg(n)
+        print()
+      end
+  end
+  if #err > 0 then pxerror(3,table.concat(err)) end
+end
+
 if options.b then
   dobaseinfo(aur, nonopts, verbosity)
 elseif options.i then
@@ -640,6 +707,8 @@ elseif options.s then
   dosearch(aur, nonopts, verbosity)
 elseif options.u then
   doupdate(aur, verbosity)
+elseif options.r then
+  dodepends(aur, nonopts, verbosity)
 else
   pxerror(1, "Missing action\n")
 end
@@ -667,14 +736,6 @@ print(ffi.string(s:get_name()))
 s = alpm.find_dbs_satisfier(pacman, pacman:get_syncdbs(), "libgl")
 print(ffi.string(s:get_name()))
 print(s==nil)
-
-function pkg_is_local(pkgcache, dep)
-    return alpm.find_satisfier(pkgcache, dep) ~= nil
-end
-
-function pkg_is_sync(handle, dblist, dep)
-    return alpm.find_satisfier(handle, dblist, dep) ~= nil
-end
 --print(json:encode_pretty(json:decode(data.get())))
 --print(archive.archive_version_number())
 --print(ffi.string(archive.archive_version_string()))
