@@ -194,42 +194,42 @@ function BaseTree.new(t)
    return setmetatable(t, BaseTree)
 end
 setmetatable(BaseTree,{
-    __call = function (tbl,arg)
-       return tbl.new(arg)
-    end,
+  __call = function (tbl,arg)
+     return tbl.new(arg)
+  end,
 })
 function BaseTree:add(pkg)
-    if self[pkg.PackageBase] == nil then self[pkg.PackageBase] = {} end
-    table.add(self[pkg.PackageBase], pkg.Name)
+  if self[pkg.PackageBase] == nil then self[pkg.PackageBase] = {} end
+  table.add(self[pkg.PackageBase], pkg.Name)
 end
 
 
 function get_foreign_pkgs(a)
-    local dbs = a:get_syncdbs()
-    local pkg = a:get_localdb():get_pkgcache()
-    local fpkgs = {}
-    while pkg ~= nil do
-        local name = alpm.alpm_pkg_get_name(pkg.data)
-        local db = dbs
-        local foreign=true
-        while db ~= nil do
-            if alpm.alpm_db_get_pkg(db.data, name) ~= nil then
-                foreign = false
-                break
-            end
-            db = db:Next()
-        end
-        if foreign then fpkgs[#fpkgs+1] = alpm.Pkgref(pkg.data) end
-        pkg = pkg:Next()
+  local dbs = a:get_syncdbs()
+  local pkg = a:get_localdb():get_pkgcache()
+  local fpkgs = {}
+  while pkg ~= nil do
+    local name = alpm.alpm_pkg_get_name(pkg.data)
+    local db = dbs
+    local foreign=true
+    while db ~= nil do
+      if alpm.alpm_db_get_pkg(db.data, name) ~= nil then
+        foreign = false
+        break
+      end
+      db = db:Next()
     end
-    return fpkgs
+    if foreign then fpkgs[#fpkgs+1] = alpm.Pkgref(pkg.data) end
+    pkg = pkg:Next()
+  end
+  return fpkgs
 end
 
 function AURPC:getupdates()
   assert(self.pacman)
   local pkgs={}
   for k,v in ipairs(get_foreign_pkgs(self.pacman)) do
-      pkgs[k] = alpm.String(v:get_name())
+    pkgs[k] = alpm.String(v:get_name())
   end
   local pkginfos = self:getinfo(pkgs)
   local localdb = self.pacman:get_localdb()
@@ -504,15 +504,15 @@ function domsearch(aur, targets, verbosity)
   local a,err={},{}
   local restmpl = "&[bright]%s &[green]%s&[reset]"
   for _,n in ipairs(p) do
-      if verbosity == Verbosity.QUIET then
-        print(n.Name)
-      elseif verbosity >= Verbosity.VERBOSE then
-        printpkg(n)
-        print()
-      else
-        print(restmpl:fmt(n.Name, n.Version))
-        print('  '..wrapper(n.Description, TERMWIDTH, '  '))
-      end
+    if verbosity == Verbosity.QUIET then
+      print(n.Name)
+    elseif verbosity >= Verbosity.VERBOSE then
+      printpkg(n)
+      print()
+    else
+      print(restmpl:fmt(n.Name, n.Version))
+      print('  '..wrapper(n.Description, TERMWIDTH, '  '))
+    end
   end
 end
 function pattern_extract_literal(p)
