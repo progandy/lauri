@@ -690,6 +690,42 @@ function deprecurse(aur, pkg, cache)
   return ret
 end
 
+function toposort(pkgs)
+  local sorted={}
+  local marked={}
+  local unmarked=true
+  local die=function(s) print(s); os.exit(1) end
+  local PERM,TEMP=1,2
+  local visit=function(n)
+    if marked[n] == TEMP then io.stderr:write("DAG cycle\n")  end
+    if not marked[n] then 
+      marked[n] = TEMP
+      -- for each node m with an edge from n to m do
+      --      visit(m)
+      for _,m in ipairs(n.Depends or {}) do
+        local p = pkgs[m:match("^[^><= ]*")]
+        if p then visit(p) end
+      end
+      for _,m in ipairs(n.MakeDepends or {}) do
+        local p = pkgs[m:match("^[^><= ]*")]
+        if p then visit(p) end
+      end
+      marked[n] = PERM
+      table.insert(sorted,1,n)
+    end
+  end
+  while unmarked do
+    unmarked = false
+    for _,k in pairs(pkgs) do
+      if not marked[k] then 
+        unmarked = true
+        visit(k)
+      end
+    end
+  end
+  return sorted
+end
+
 function dodepends(aur, targets, verbosity)
   if not targets or #targets < 1 then
     fxerror(3,"Missing package names.\n")
@@ -711,6 +747,7 @@ function dodepends(aur, targets, verbosity)
   end
   local a,err={},{}
   local restmpl = "&[bright]%s &[green]%s&[reset]"
+  deps = toposort(deps)
   for _,n in ipairs(deps) do
     if verbosity == Verbosity.QUIET then
       print(restmpl:fmt(n.Name, n.Version))
