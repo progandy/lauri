@@ -650,30 +650,38 @@ end
 
 local pkgcache = pacman:get_localdb():get_pkgcache()
 local syncdbs = pacman:get_syncdbs()
-function deprecurse(aur, pkg)
-  local dep = {}
-  for _,d in ipairs(pkg.Depends) do
-    if not pkg_local_satisfier(pkgcache, d)
-      and not pkg_sync_satisfier(pacman, syncdbs, d)
-    then
-      dep[#dep+1] = d:match("^[^><= ]*")
+function deprecurse(aur, pkg, cache)
+  local dep ={}
+  if  type(cache)~='table' then cache = {} end
+  if nil ~= pkg.Depends then
+    for _,d in ipairs(pkg.Depends) do
+      if not pkg_local_satisfier(pkgcache, d)
+        and not pkg_sync_satisfier(pacman, syncdbs, d)
+        and not cache[d]
+      then
+        cache[d] = true
+        dep[#dep+1] = d:match("^[^><= ]*")
+      end
     end
   end
   if nil ~= pkg.MakeDepends then
-  for _,d in ipairs(pkg.MakeDepends) do
-    if not pkg_local_satisfier(pkgcache, d)
-      and not pkg_sync_satisfier(pacman, syncdbs, d)
-    then
-      dep[#dep+1] = d:match("^[^><= ]*")
+    for _,d in ipairs(pkg.MakeDepends) do
+      if not pkg_local_satisfier(pkgcache, d)
+        and not pkg_sync_satisfier(pacman, syncdbs, d)
+        and not cache[d]
+      then
+        cache[d] = true
+        dep[#dep+1] = d:match("^[^><= ]*")
+      end
     end
   end
-end
   local p,m = aur:getinfo(dep)
   local ret = {}
   if p and #p > 0 then
     ret = {unpack(p)}
     for _,k in ipairs(p) do
-      local deps = deprecurse(aur, k)
+      cache[k.Name] = k
+      local deps = deprecurse(aur, k, cache)
       for _,d in ipairs(deps) do
         table.insert(ret, d)
       end
@@ -683,24 +691,34 @@ end
 end
 
 function dodepends(aur, targets, verbosity)
-  if not targets or #targets ~= 1 then
+  if not targets or #targets < 1 then
     fxerror(3,"Missing package names.\n")
   end
   local p,m = aur:getinfo(targets)
   if not p or #p == 0 then
     fxerror(3,"Package(s) not found in AUR.\n")
   end
-  local deps = deprecurse(aur, p[1])
+  local cache,deps={},{}
+  for _,pkg in ipairs(p) do
+    cache[pkg.Name] = pkg
+    table.insert(deps, pkg)
+  end
+  for _,pkg in ipairs(p) do
+    local dep = deprecurse(aur, pkg, cache)
+    for _,d in ipairs(dep) do
+      table.insert(deps, d)
+    end
+  end
   local a,err={},{}
   local restmpl = "&[bright]%s &[green]%s&[reset]"
   for _,n in ipairs(deps) do
-      if verbosity == Verbosity.QUIET then
-        print(restmpl:fmt(n.Name, n.Version))
-        print('  '..wrapper(n.Description, TERMWIDTH, '  '))
-      else
-        printpkg(n)
-        print()
-      end
+    if verbosity == Verbosity.QUIET then
+      print(restmpl:fmt(n.Name, n.Version))
+      print('  '..wrapper(n.Description, TERMWIDTH, '  '))
+    else
+      printpkg(n)
+      print()
+    end
   end
   if #err > 0 then pxerror(3,table.concat(err)) end
 end
