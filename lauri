@@ -745,13 +745,15 @@ function dodepends(aur, targets, verbosity)
   local restmpl = "&[bright]%s &[green]%s&[reset] &[yellow](%s)&[reset]"
   deps = toposort(p)
   for _,n in ipairs(deps) do
-    if verbosity == Verbosity.QUIET then
-      print(restmpl:fmt(n.Name, n.Version, dt[m[n.Name]]))
-      print('  '..wrapper(n.Description, TERMWIDTH, '  '))
-    else
+    if verbosity < Verbosity.DEFAULT then
+      print(n.Name)
+    elseif verbosity > Verbosity.DEFAULT then
       n.InstallRequired = dt[m[n.Name]]
       printpkg(n, {"InstallRequired", unpack(AURFIELDS)})
       print()
+    else
+      print(restmpl:fmt(n.Name, n.Version, dt[m[n.Name]]))
+      print('  '..wrapper(n.Description, TERMWIDTH, '  '))
     end
     a[n.Name] = true
   end
