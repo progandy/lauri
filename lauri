@@ -2,9 +2,11 @@
 local TERMWIDTH = 80
 local VERSION = "v0.1"
 local LIBPATH = '%lib/?.lua'
-local AUR_BASE = "https://aur.archlinux.org"
+local AUR_LOCAL = os.getenv("HOME").."/AUR4"
+local AUR_BASE = "https://aur4.archlinux.org"
 local AUR_RPC_FORMAT = "%s/rpc.php?v=3&type=%s&%s=%s"
 local AUR_PKGBASE_FORMAT = "%s/pkgbase/%s/?setlang=en"
+local AUR_GIT_FORMAT = "%s/%s.git"
 local AURCATEGORIES = {[1]=false, [2]="daemons", [3]="devel", [4]="editors",
         [5]="emulators", [6]="games", [7]="gnome", [8]="i18n", [9]="kde",
         [10]="lib", [11]="modules", [12]="multimedia", [13]="network",
@@ -26,6 +28,7 @@ local AURFIELDS = {'ID', 'Name', 'PackageBaseID', 'PackageBase', 'Version',
 
 local ffi=require("ffi")
 ffi.cdef[[
+int setenv(const char *name, const char *value, int overwrite);
 char *getcwd(char *, size_t);
 void freecwd(char*) __asm__("free");
 int isatty(int);
@@ -249,7 +252,25 @@ function AURPC:getupdates()
 end
 
 function AURPC:download(pkg)
-
+  ffi.C.setenv("AUR_LOCAL", AUR_LOCAL, 1)
+  ffi.C.setenv("AUR_PKGBASE", pkg.PackageBase, 1)
+  ffi.C.setenv("AUR_REPO", string.format(AUR_GIT_FORMAT, AUR_BASE, pkg.PackageBase), 1)
+  local p=io.popen([[
+  mkdir -p "$AUR_LOCAL" && cd "$AUR_LOCAL" || exit 1; 
+  if git -C "$AUR_PKGBASE" rev-parse >/dev/null 2>&1 ; then
+    git -C "$AUR_PKGBASE" checkout  --quiet --detach
+    git -C "$AUR_PKGBASE" fetch origin master:master && err=0
+    git -C "$AUR_PKGBASE" checkout  --quiet -
+    [ x"$err" = x"0" ] && exit 0
+  else
+    git clone "$AUR_REPO" && exit 0;
+  fi
+  echo "ERROR during git download."
+  ]],"r")
+  local s=p:read("*all")
+  print(s)
+  p:close()
+  return s and s~="" and not s:match("ERROR during git download.")
 end
 
 
@@ -316,7 +337,7 @@ if aurbase and aurbase:match("https?://.*%.") then
   AUR_BASE = aurbase
 end
 
-local options,nonopts = opt.getopt("c:bhimrsuqvw:", arg)
+local options,nonopts = opt.getopt("c:bhimrsuqvw:d", arg)
 if not options then
   pxerror(1, nonopts)
 elseif options.h then
@@ -763,6 +784,34 @@ function dodepends(aur, targets, verbosity)
   if #err > 0 then pxerror(3,table.concat(err)) end
 end
 
+
+function dodownload(aur, targets, verbosity)
+  if not targets or #targets == 0 then
+    fxerror(3,"Missing package names.\n")
+  end
+  local p,m={},{}
+  if options.r then
+    p,m = deprecurse(aur, targets)
+  else
+    p,_ = aur:getinfo(targets)
+    for _,n in ipairs(targets) do m[n] = true end
+  end
+  if not p or #p == 0 then
+    fxerror(3,"Package(s) not found in AUR.\n")
+  end
+  local a,err={},{}
+  local restmpl = "&[bright]%s &[green]%s&[reset] ..."
+  for _,n in ipairs(p) do
+    print(restmpl:fmt(n.Name, n.Version))
+    aur:download(n)
+    a[n.Name] = true
+  end
+  for n,_ in pairs(m) do
+    if not a[n] then err[#err+1] = "Package '" .. n .. "' not found in AUR.\n" end
+  end
+  if #err > 0 then pxerror(3,table.concat(err)) end
+end
+
 if options.b then
   dobaseinfo(aur, nonopts, verbosity)
 elseif options.i then
@@ -773,6 +822,8 @@ elseif options.s then
   dosearch(aur, nonopts, verbosity)
 elseif options.u then
   doupdate(aur, verbosity)
+elseif options.d then
+  dodownload(aur, nonopts, verbosity)
 elseif options.r then
   dodepends(aur, nonopts, verbosity)
 else
