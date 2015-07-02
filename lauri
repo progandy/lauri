@@ -637,9 +637,12 @@ function dosearch(aur, terms, verbosity)
   end
 end
 function doupdate(aur, verbosity)
-  local u u=aur:getupdates()
+  local u=aur:getupdates()
   if not u or #u == 0 then
     pxerror(4, "No updates available in the AUR.\n")
+  end
+  if options.r then
+    u=deprecurse(aur,u)
   end
   local restmpl = "&[bright]%s &[green]%s&[reset] &[red](%s)&[reset]"
   local verbose=false
