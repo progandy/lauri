@@ -729,9 +729,19 @@ function deprecurse(aur, targets)
     return pkgs
   end
   local p,m
-  if type(targets) == 'table' and targets.Name then
+  if type(targets) ~= 'table' then
+    p=tostring(targets)
+    deptypes[p] = EXPLICIT
+    p,m = aur:getinfo(p)
+  elseif targets.Name then
     p,m={targets}, 1
     deptypes[targets.Name] = EXPLICIT
+  elseif type(targets[1]) == 'table' and targets[1].Name then
+    p={}
+    for _,t in ipairs(targets) do
+      deptypes[t.Name] = EXPLICIT
+      table.insert(p, t)
+    end
   else
     for _,t in ipairs(targets or {targets}) do
       deptypes[t] = EXPLICIT
