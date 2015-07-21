@@ -265,6 +265,7 @@ function AURPC:download(pkg)
   ffi.C.setenv("AUR_LOCAL", AUR_LOCAL, 1)
   ffi.C.setenv("AUR_PKGBASE", pkg.PackageBase, 1)
   ffi.C.setenv("AUR_REPO", string.format(AUR_GIT_FORMAT, AUR_BASE, pkg.PackageBase), 1)
+  print("Downloading ...")
   local p=io.popen([[
   mkdir -p "$AUR_LOCAL" && cd "$AUR_LOCAL" || exit 1; 
   if git -C "$AUR_PKGBASE" rev-parse >/dev/null 2>&1 ; then
@@ -339,7 +340,7 @@ Options:
 ]=]
 end
 
-local Verbosity = {QUIET=-1,DEFAULT=0,VERBOSE=1}
+local Verbosity = {QUIET=-1,DEFAULT=0,VERBOSE=1,EXTRAVERBOSE=2}
 local verbosity = Verbosity.DEFAULT
 local istty = ffi.C.isatty(ffi.C.STDOUT) ~= 0
 local aurbase = os.getenv("AUR_BASE")
@@ -651,25 +652,37 @@ function doupdate(aur, verbosity)
   if not u or #u == 0 then
     pxerror(4, "No updates available in the AUR.\n")
   end
+  local m={}
   if options.r then
-    u=deprecurse(aur,u)
+    u,m=deprecurse(aur,u)
   end
   local restmpl = "&[bright]%s &[green]%s&[reset] &[red](%s)&[reset]"
   local verbose=false
   if verbosity and verbosity >= Verbosity.VERBOSE then
     verbose = true
-    restmpl = restmpl .. ' &[dim]%s&[reset]'
+    if options.r then restmpl = restmpl .. '\n &[dim]%s&[reset]' end
+    restmpl = restmpl .. '\n &[dim]%s%s&[reset]'
   end
-  for i=1,#u do
+  for i,p in ipairs(u) do
     if verbose then
-      print(wrapper(restmpl:fmt(u[i].Name, u[i].Version, 
-                                u[i].OldVersion, u[i].URLPath), TERMWIDTH, '  '))
+      if options.r then
+        print(wrapper(restmpl:fmt(p.Name, p.Version, 
+                                p.OldVersion, deptypestr(m[p.Name]), 
+                                AUR_BASE, p.URLPath), TERMWIDTH, '  '))
+      else
+        print(wrapper(restmpl:fmt(p.Name, p.Version, p.OldVersion, 
+                                AUR_BASE, p.URLPath), TERMWIDTH, '  '))
+      end
     elseif verbosity == Verbosity.QUIET then
-      print(u[i].Name)
+      print(p.Name)
     else
-      print(wrapper(restmpl:fmt(u[i].Name, u[i].Version, 
-                                u[i].OldVersion), TERMWIDTH, '  '))
+      print(wrapper(restmpl:fmt(p.Name, p.Version, 
+                                p.OldVersion), TERMWIDTH, '  '))
     end
+    m[p.Name] = nil
+  end
+  for p,t in pairs(m) do
+    if t then print(string.format("Package %s (%s) not found in AUR.", p, t)) end
   end
 end
 
@@ -718,6 +731,11 @@ function toposort(pkgs)
     end
   end
   return sorted
+end
+
+function deptypestr(t)
+  local dt={[1]="makedepends", [2]="depends", [3]="explicit"}
+  return dt[t]
 end
 
 function deprecurse(aur, targets)
@@ -786,7 +804,6 @@ function dodepends(aur, targets, verbosity)
     fxerror(3,"Package(s) not found in AUR.\n")
   end
   local a,err={},{}
-  local dt={[1]="makedepends", [2]="depends", [3]="explicit"}
   local restmpl = "&[bright]%s &[green]%s&[reset] &[yellow](%s)&[reset]"
   for _,n in ipairs(p) do
     if verbosity < Verbosity.DEFAULT then
@@ -796,7 +813,7 @@ function dodepends(aur, targets, verbosity)
       printpkg(n, {"InstallRequired", unpack(AURFIELDS)})
       print()
     else
-      print(restmpl:fmt(n.Name, n.Version, dt[m[n.Name]]))
+      print(restmpl:fmt(n.Name, n.Version, deptypestr(m[n.Name])))
       print('  '..wrapper(n.Description, TERMWIDTH, '  '))
     end
     a[n.Name] = true
