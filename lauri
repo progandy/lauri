@@ -1,7 +1,7 @@
 #!/usr/bin/env luajit
 local TERMWIDTH = 80
 local VERSION = "v0.1"
-local LIBPATH = '%lib/?.lua'
+local LIBPATH = '%LIBDIR%/?.lua'
 local AUR_LOCAL = os.getenv("HOME").."/AUR4"
 local AUR_BASE = "https://aur4.archlinux.org"
 local AUR_RPC_FORMAT = "%s/rpc.php?v=3&type=%s&%s=%s"
@@ -31,6 +31,7 @@ ffi.cdef[[
 int setenv(const char *name, const char *value, int overwrite);
 char *getcwd(char *, size_t);
 void freecwd(char*) __asm__("free");
+char *realpath(const char*, const char*);
 int isatty(int);
 static const int STDOUT=1;
 static const int TIOCGWINSZ  = 0x5413;
@@ -67,15 +68,24 @@ int setenv(const char *name, const char *value, int overwrite);
 int unsetenv(const char *name);
 ]]
 
-local getexepath = function()
-  local mainpath = arg[0]:match('^(.-)[^/]*$') or ''
-  if mainpath:sub(1,1) == '/' then return mainpath end
-  local charp = ffi.C.getcwd(nil, 0)
-  local path = ffi.string(charp)
+local defaultlibdir = function(_)
+  local self,charp
+  if string.sub(arg[0], 1, 1) == '/' then
+    self=arg[0]
+  elseif string.sub(arg[0], 1, 7) == 'file://' then
+    self=string.gsub(arg[0], '^file:///?', '/')
+  else
+    local charp = ffi.C.getcwd(nil, 0)
+    local path = ffi.string(charp)
+    ffi.C.freecwd(charp)
+    self=path..'/'..arg[0]
+  end
+  charp=ffi.C.realpath(self, nil)
+  self = ffi.string(charp)
   ffi.C.freecwd(charp)
-  return path ..'/'.. mainpath
+  return (string.match(self, '^(.-)[^/]*$') or '') .. '/lib'
 end
-package.path = LIBPATH:gsub('%%', getexepath()) .. ";?.lua;"   .. package.path
+package.path = LIBPATH:gsub('^%%LIBDIR%%', defaultlibdir) .. ";"   .. package.path
 
 local alpm=require("alpm")
 local archive=require("archive")
