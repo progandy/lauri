@@ -647,7 +647,7 @@ function dosearch(aur, terms, verbosity)
     end
   end
 end
-function doupdate(aur, verbosity)
+function doupdate(aur, download, verbosity)
   local u=aur:getupdates()
   if not u or #u == 0 then
     pxerror(4, "No updates available in the AUR.\n")
@@ -679,6 +679,7 @@ function doupdate(aur, verbosity)
       print(wrapper(restmpl:fmt(p.Name, p.Version, 
                                 p.OldVersion), TERMWIDTH, '  '))
     end
+    if download then aur:download(p) end
     m[p.Name] = nil
   end
   for p,t in pairs(m) do
@@ -861,7 +862,7 @@ elseif options.m then
 elseif options.s then
   dosearch(aur, nonopts, verbosity)
 elseif options.u then
-  doupdate(aur, verbosity)
+  doupdate(aur, options.d, verbosity)
 elseif options.d then
   dodownload(aur, nonopts, verbosity)
 elseif options.r then
