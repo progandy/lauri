@@ -296,6 +296,7 @@ function pxerror(e,s)
 end
 
 function simplewrap(text,length,indent,firstlength,subindent)
+  if text == nil then return '' end
   local lines,i,len,w={},1,firstlength or length
   for n,w in text:gmatch("(\n?)%s*(%S+)") do
     if lines[i] == nil then
@@ -399,7 +400,7 @@ elseif istty and options.w ~= 0 then
   TERMWIDTH = screen_size[0].ws_col;
   if TERMWIDTH < 40 then TERMWIDTH = 40 end;
 else
-  wrapper = function(s,_,i,...) return string.gsub(s, '\n', '\n'..i) end
+  wrapper = function(s,_,i,...) return string.gsub(s or '', '\n', '\n'..i) end
 end
 
 curl.init(curl.CURL_GLOBAL_ALL)
