@@ -338,6 +338,7 @@ Options:
   -w WIDTH  wordwrap width; disable with 0 (min: 40, default: 80 in tty, else 0)
   -q        quiet, minimal output
   -v        verbose output
+  -x        full lua expression support in search (including -)
 ]=]
 end
 
@@ -349,7 +350,7 @@ if aurbase and aurbase:match("https?://.*%.") then
   AUR_BASE = aurbase
 end
 
-local options,nonopts = opt.getopt("c:bhimrsuqvw:d", arg)
+local options,nonopts = opt.getopt("c:bhimrsuqvw:dx", arg)
 if not options then
   pxerror(1, nonopts)
 elseif options.h then
@@ -604,20 +605,22 @@ function matchall(s, patterns)
   if type(s) ~= 'table' then s = {tostring(s)} end
   for _,p in ipairs(patterns) do
     local m=false
+    p=p:lower()
     for _,h in ipairs(s) do
-      if h:match(p) then m=true ; break end
+      if h:lower():match(p) then m=true ; break end
     end
     if not m then return false end
   end
   return true
 end
-function dosearch(aur, terms, verbosity)
+function dosearch(aur, terms, simple, verbosity)
   local p=""
   if #nonopts == 0 then
     pxerror(3, "Missing search terms.\n")
   end
   -- find the longest search term for initial search
   for i=1,#nonopts do
+    if simple then nonopts[i]=nonopts[i]:gsub("%-", "%%-") end
     if not nonopts[i]:match('[%(%)%.%%%+%-%*%?%[%^%$]') and #nonopts[i] > #p then p=nonopts[i] end
   end
   if #p == 0 then
@@ -868,7 +871,7 @@ elseif options.r then
   dodepends(aur, nonopts, verbosity)
 else -- options.s is default
 --elseif options.s then
-  dosearch(aur, nonopts, verbosity)
+  dosearch(aur, nonopts, not options.x, verbosity)
 --else
 --  pxerror(1, "Missing action\n")
 end
