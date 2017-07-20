@@ -1,7 +1,7 @@
 local argtype = {none=true,maybe=0,one=1,any=-1,many=2,all=3}
 
 local function getopt(optstring,args,longopts,skipunknown)
-  if not args or #args == 0 then return {},nil end
+  if not args or #args == 0 then return {},{} end
   local opts,k,v,erropts = {},nil,nil,{}
   for k,v in optstring:gmatch('(%w)([.:+*~]?)') do
     if not v or #v == 0 then

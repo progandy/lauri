@@ -372,7 +372,7 @@ do
   for _,v in ipairs({'b','i','m','s','u','d'}) do
     if options[v] then i = i+1 end
   end
-  if i == 0 and not options.r then
+  if i == 0 and not options.r and #nonopts<1 then
     pxerror(2, gethelp())
   elseif i == 2 and options.u and options.d then
     -- this is allowed to download updates
@@ -381,9 +381,9 @@ do
   end
 end
 
-if options.c == nil or options.c == 'auto' then
+if options.c == nil or options.c=='a' or options.c == 'auto' then
   options.c = istty
-elseif options.c == 'always' or options.c == 'true' or options.c == 'yes' then
+elseif options.c =='y' or options.c == 'always' or options.c == 'true' or options.c == 'yes' then
   options.c = true
 else
   options.c = false
@@ -860,16 +860,17 @@ elseif options.i then
   doinfo(aur, nonopts, verbosity)
 elseif options.m then
   domsearch(aur, nonopts, verbosity)
-elseif options.s then
-  dosearch(aur, nonopts, verbosity)
 elseif options.u then
   doupdate(aur, options.d, verbosity)
 elseif options.d then
   dodownload(aur, nonopts, verbosity)
 elseif options.r then
   dodepends(aur, nonopts, verbosity)
-else
-  pxerror(1, "Missing action\n")
+else -- options.s is default
+--elseif options.s then
+  dosearch(aur, nonopts, verbosity)
+--else
+--  pxerror(1, "Missing action\n")
 end
 
 os.exit()
