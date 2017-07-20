@@ -36,8 +36,8 @@
   | 
 --]=========================================================================]
 local ffi = require("ffi")
-_a=ffi.load("crypto")
-_b=ffi.load("ssl")
+local _a=ffi.load("crypto")
+local _b=ffi.load("ssl")
 local lib = ffi.load("curl")
 local bit = require("bit")
 
@@ -45,11 +45,12 @@ local M = {}
 setmetatable(M, { __index = lib })
 
 
-ffi.cdef[[
+ffi.cdef([[
  typedef struct {
-    int64_t __fds_bits[1024 / 64];
-  } curl_fd_set;
-]]
+   // 1024 bits
+    unsigned long __fds_bits[128 / ]]..ffi.sizeof("long")..[[ ];
+  } fd_set;
+]])
 
 -- curlver.h [[
 M.LIBCURL_COPYRIGHT = "1996 - 2014 Daniel Stenberg, <daniel@haxx.se>."
@@ -1208,9 +1209,9 @@ CURLMcode curl_multi_add_handle(CURLM *multi_handle,
 CURLMcode curl_multi_remove_handle(CURLM *multi_handle,
                                                CURL *curl_handle);
 CURLMcode curl_multi_fdset(CURLM *multi_handle,
-                                       curl_fd_set *read_fd_set,
-                                       curl_fd_set *write_fd_set,
-                                       curl_fd_set *exc_fd_set,
+                                       fd_set *read_fd_set,
+                                       fd_set *write_fd_set,
+                                       fd_set *exc_fd_set,
                                        int *max_fd);
 CURLMcode curl_multi_wait(CURLM *multi_handle,
                                       struct curl_waitfd extra_fds[],
@@ -1277,6 +1278,42 @@ CURLMcode curl_multi_assign(CURLM *multi_handle,
                                         curl_socket_t sockfd, void *sockp);
 ]]
 -- ]> multi.h
+
+M.Multi=ffi.metatype("CURLM", {
+  __index = {
+    init = function(self)
+      assert(self == nil)
+      return ffi.gc(lib.curl_multi_init(), lib.curl_multi_cleanup)
+    end,
+    add_handle = lib.curl_multi_add_handle,
+    remove_handle = lib.curl_multi_remove_handle,
+    fdset = lib.curl_multi_fdset,
+    wait = lib.curl_multi_wait,
+    perform = lib.curl_multi_perform,
+    cleanup = function(self) return lib.curl_multi_cleanup(ffi.gc(self,false)) end,
+    info_read = lib.curl_multi_info_read,
+    strerror = lib.curl_multi_strerror,
+    socket_action = lib.curl_multi_socket_action,
+    socket_all = lib.curl_multi_socket_all,
+    socket = function(x,y,z) lib.curl_multi_socket_action(x,y,0,z) end,
+    timeout = lib.curl_multi_timeout,
+    setopt = function(self, option, value)
+      assert(self ~= nil)
+      option = ffi.cast(M.CURLMoption, option)
+      if option > lib.CURLOPTTYPE_OFF_T then
+        if not ffi.istype(M.Off_t, value) then value = M.Off_t(value) end
+      elseif option > lib.CURLOPTTYPE_FUNCTIONPOINT then
+        assert(type(value) == 'cdata')
+      elseif option > lib.CURLOPTTYPE_OBJECTPOINT then
+        assert(type(value) ~= 'function' and type(value) ~= 'table')
+      else
+        if not ffi.istype(M.Long, value) then value = M.Long(value) end
+      end
+      return lib.curl_multi_setopt(self, option, value)
+    end,
+    assign = curl_multi_assign,
+ }
+})
 
 local __curl_cleanup_gc_hook
 function M.init(flags, ...)
@@ -1349,7 +1386,9 @@ M.Callback = {
   Xferinfo = ffi.typeof("curl_xferinfo_callback"),
   Formget = ffi.typeof("curl_formget_callback"),
   Chunk_bgn = ffi.typeof("curl_chunk_bgn_callback"),
+  ChunkBgn = ffi.typeof("curl_chunk_bgn_callback"),
   Chunk_end = ffi.typeof("curl_chunk_end_callback"),
+  ChunkEnd = ffi.typeof("curl_chunk_end_callback"),
   Fnmatch = ffi.typeof("curl_fnmatch_callback"),
   Seek = ffi.typeof("curl_seek_callback"),
   Read = ffi.typeof("curl_read_callback"),
@@ -1359,15 +1398,19 @@ M.Callback = {
   Debug = ffi.typeof("curl_debug_callback"),
   Conv = ffi.typeof("curl_conv_callback"),
   Ssl_ctx = ffi.typeof("curl_ssl_ctx_callback"),
+  SslCtx = ffi.typeof("curl_ssl_ctx_callback"),
   Ioctl = ffi.typeof("curl_ioctl_callback"),
   Socket = ffi.typeof("curl_socket_callback"),
   Multi_timer = ffi.typeof("curl_multi_timer_callback"),
+  MultiTimer = ffi.typeof("curl_multi_timer_callback"),
 }
 M.Off_t = ffi.typeof("curl_off_t")
 M.Long = ffi.typeof("long")
 M.SList = {
   from_table = M.curl_slist_from_table,
+  fromTable = M.curl_slist_from_table,
   to_table = M.curl_slist_to_table,
+  toTable = M.curl_slist_to_table,
   free = M.curl_slist_free_all,
   append = M.curl_slist_append
 }
@@ -1379,15 +1422,16 @@ end
 
 function M.WriteBuffer()
   local buffer = {}
-  local cb = ffi.cast(M.Callback.Write, 
+  --local cb = ffi.cast(M.Callback.Write, 
+  local cb = ffi.cast("curl_write_callback", 
     function(data, msize, nmemb, id)
       local size = msize*nmemb
       if size == 0 then return 0 end
       buffer[#buffer+1] = ffi.string(data, size)
       return size
     end)
-  local __gc = ffi.gc(ffi.new("void*"),
-    function() cb:free(); cb=nil end)
+--  local __gc = ffi.gc(ffi.new("void*"),
+  --  function() cb:free(); cb=nil end)
   return setmetatable({}, {cb=cb,buffer=buffer,ffigc=__gc, __index = {
       getwritecb = function(self) return cb end,
       write = function(self,text)
