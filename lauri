@@ -23,7 +23,7 @@ end
 local AURFIELDS = {'ID', 'Name', 'PackageBaseID', 'PackageBase', 'Version',
       'Category', 'Keywords', 'Description', 'URL', 'URLPath', 'NumVotes',
       'Popularity', 'OutOfDate', 'Maintainer', 'FirstSubmitted', 'LastModified',
-      'Depends', 'MakeDepends', 'CheckDepends', 'OptDepends', 'Conflicts', 
+      'Depends', 'MakeDepends', 'CheckDepends', 'OptDepends', 'Conflicts',
       'Provides', 'Replaces', 'Groups', 'License'}
 
 local ffi=require("ffi")
@@ -267,7 +267,7 @@ function AURPC:download(pkg)
   ffi.C.setenv("AUR_REPO", string.format(AUR_GIT_FORMAT, AUR_BASE, pkg.PackageBase), 1)
   print("Downloading ...")
   local p=io.popen([[
-  mkdir -p "$AUR_LOCAL" && cd "$AUR_LOCAL" || exit 1; 
+  mkdir -p "$AUR_LOCAL" && cd "$AUR_LOCAL" || exit 1;
   if git -C "$AUR_PKGBASE" rev-parse >/dev/null 2>&1 ; then
     git -C "$AUR_PKGBASE" checkout  --quiet --detach
     git -C "$AUR_PKGBASE" fetch origin master:master && err=0
@@ -569,7 +569,7 @@ function pattern_extract_literal(p)
         state = ESC
         result = ''
       elseif c == '?' or c == '-' or c == '*' or c == '+' then
-        if result == bestresult then 
+        if result == bestresult then
           result = result:sub(1,-2)
           bestresult = result
         else
@@ -708,9 +708,9 @@ function toposort(pkgs)
   local die=function(s) print(s); os.exit(1) end
   local PERM,TEMP=1,2
   local visit=function(n)
-    if marked[n] == TEMP then 
+    if marked[n] == TEMP then
       io.stderr:write("DAG cycle\n")
-    elseif not marked[n] then 
+    elseif not marked[n] then
       marked[n] = TEMP
       -- for each node m with an edge from n to m do
       --      visit(m)
@@ -729,7 +729,7 @@ function toposort(pkgs)
   while unmarked do
     unmarked = false
     for _,k in pairs(pkgs) do
-      if not marked[k] then 
+      if not marked[k] then
         unmarked = true
         visit(k)
       end
