@@ -660,7 +660,7 @@ function doupdate(aur, download, verbosity)
   if options.r then
     u,m=deprecurse(aur,u)
   end
-  local restmpl = "&[bright]%s &[green]%s&[reset] &[red](%s)&[reset]"
+  local restmpl = "&[bright]%s &[red]%s&[reset] -> &[green]%s&[reset]"
   local verbose=false
   if verbosity and verbosity >= Verbosity.VERBOSE then
     verbose = true
@@ -670,18 +670,18 @@ function doupdate(aur, download, verbosity)
   for i,p in ipairs(u) do
     if verbose then
       if options.r then
-        print(wrapper(restmpl:fmt(p.Name, p.Version, 
-                                p.OldVersion, deptypestr(m[p.Name]), 
+        print(wrapper(restmpl:fmt(p.Name, p.OldVersion,
+                                p.Version, deptypestr(m[p.Name]),
                                 AUR_BASE, p.URLPath), TERMWIDTH, '  '))
       else
-        print(wrapper(restmpl:fmt(p.Name, p.Version, p.OldVersion, 
+        print(wrapper(restmpl:fmt(p.Name, p.OldVersion, p.Version,
                                 AUR_BASE, p.URLPath), TERMWIDTH, '  '))
       end
     elseif verbosity == Verbosity.QUIET then
       print(p.Name)
     else
-      print(wrapper(restmpl:fmt(p.Name, p.Version, 
-                                p.OldVersion), TERMWIDTH, '  '))
+      print(wrapper(restmpl:fmt(p.Name, p.OldVersion,
+                                p.Version), TERMWIDTH, '  '))
     end
     if download then aur:download(p) end
     m[p.Name] = nil
