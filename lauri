@@ -4,7 +4,7 @@ local VERSION = "v0.1"
 local LIBPATH = '%LIBDIR%/?.lua'
 local AUR_LOCAL = os.getenv("HOME").."/AUR4"
 local AUR_BASE = "https://aur.archlinux.org"
-local AUR_RPC_FORMAT = "%s/rpc.php?v=5&type=%s&%s=%s"
+local AUR_RPC_FORMAT = "%s/rpc?v=5&type=%s&%s=%s"
 local AUR_PKGBASE_FORMAT = "%s/pkgbase/%s/?setlang=en"
 local AUR_GIT_FORMAT = "%s/%s.git"
 local AURCATEGORIES = {[1]=false, [2]="daemons", [3]="devel", [4]="editors",
