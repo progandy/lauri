@@ -411,7 +411,7 @@ pacman=alpm.Alpm.initialize('/', '/var/lib/pacman', errno)
 dbs = {}
 for l in io.lines("/etc/pacman.conf") do
     local s = l:match("^%s*%[%s*([^%]%s]*)%s*]%s*$")
-    if s and s ~= 'options' then
+    if s and s ~= 'options' and s ~= 'aur' then
         dbs[#dbs+1] = alpm.alpm_register_syncdb(pacman, s, 0)
     end
 end
