@@ -5,7 +5,7 @@ local LIBPATH = '%LIBDIR%/?.lua'
 local AUR_LOCAL = os.getenv("HOME").."/AUR4"
 local AUR_BASE = "https://aur.archlinux.org"
 local AUR_RPC_FORMAT = "%s/rpc?v=5&type=%s&%s=%s"
-local AUR_PKGBASE_FORMAT = "%s/pkgbase/%s/?setlang=en"
+local AUR_PKGBASE_FORMAT = "%s/pkgbase/%s?setlang=en"
 local AUR_GIT_FORMAT = "%s/%s.git"
 local AURCATEGORIES = {[1]=false, [2]="daemons", [3]="devel", [4]="editors",
         [5]="emulators", [6]="games", [7]="gnome", [8]="i18n", [9]="kde",
@@ -178,7 +178,8 @@ function AURPC:getbaseinfo(pkgbase)
   c:setopt("CURLOPT_FOLLOWLOCATION", 0)
   c:setopt("CURLOPT_URL", url)
   if curl.CURLE_OK ~= c:perform() then return nil end
-  local info = data:read():match('<div id="pkgdetails" .-\n</div>')
+  --local info = data:read():match('<div id="pkgdetails" .-\n</div>')
+  local info = data:read():match('<div id="pkgdetails" .-/static/js/comment%-edit.js')
   if not info then return false, "Packagebase not found in AUR." end
   local pkginfo,k,v={PackageBase=pkgbase}
   pkginfo.URL=url:gsub("%?setlang=en$", "")
@@ -197,7 +198,7 @@ function AURPC:getbaseinfo(pkgbase)
   end
   pkginfo.Packages = {}
   local pkgs = info:match('<div id="pkgs" class="listing">.-</div>')
-  for pkg in pkgs:gmatch('"/packages/([^/]+)/"') do
+  for pkg in pkgs:gmatch('"/packages/([^/]-)/?"') do
     pkginfo.Packages[#pkginfo.Packages+1] = pkg
   end
   return pkginfo
